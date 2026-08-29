@@ -44,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("data/outputs/final/semantic_metrics.json"),
     )
+    parser.add_argument(
+        "--requirements-confirmed",
+        action="store_true",
+        help="队长已在本次打包前重新核对官方提交要求",
+    )
     parser.add_argument("--output", type=Path, required=True, help="输出 ZIP（必须不存在）")
     return parser.parse_args()
 
@@ -65,6 +70,11 @@ def validate_identity(value: str, name: str) -> str:
 
 def main() -> int:
     args = parse_args()
+    if not args.requirements_confirmed:
+        raise SystemExit(
+            "拒绝生成交付包：请由掌握真实身份信息的队长重新核对官方要求后，"
+            "显式传入 --requirements-confirmed"
+        )
     team = validate_identity(args.team, "队伍名称")
     leader = validate_identity(args.leader, "队长姓名")
     phone = validate_identity(args.phone, "手机号")
@@ -104,6 +114,7 @@ def main() -> int:
             "email_subject": subject,
             "team": team,
             "leader": leader,
+            "requirements_confirmed_by_user": True,
             "files": files,
             "validation": {
                 "geometry": geometry_report,

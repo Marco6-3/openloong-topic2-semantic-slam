@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 import yaml
 
 from scripts.create_semantic_map import classify_geometry
+from scripts.package_submission import main as package_submission
 from scripts.pcd_io import read_pcd, write_pcd
 from scripts.validate_path import validate as validate_path
 from scripts.validate_pcd import validate as validate_pcd
@@ -81,3 +83,24 @@ def test_parse_video_discovery() -> None:
     assert abs(float(report["duration_seconds"]) - 113.160737115) < 1e-9
     assert report["codec"] == "VP8"
     assert report["frame_rate"] == "30/1"
+
+
+def test_submission_package_requires_fresh_requirements_confirmation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "package_submission.py",
+            "--team",
+            "占位队名",
+            "--leader",
+            "占位姓名",
+            "--phone",
+            "13800000000",
+            "--output",
+            str(tmp_path / "submission.zip"),
+        ],
+    )
+    with pytest.raises(SystemExit, match="--requirements-confirmed"):
+        package_submission()

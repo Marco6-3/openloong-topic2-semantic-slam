@@ -14,7 +14,7 @@
 - 已锁定 ROS 2 Jazzy + Pixi 开发环境，并用 direnv 在进入目录时自动按 `pixi.lock` 激活。
 - 已将高质量 RTK 点转换为本地 ENU 轨迹，详见 [RTK 转换说明](docs/rtk-enu.md)。
 - 已用全部 652 秒数据跑通 ROS2 FAST-LIO2、RTK 轨迹融合、逐帧地图重建和 RandLA-Net 语义融合；最终得到 6,518 个轨迹点和 1,524,881 个地图点，详见 [全量候选结果](results/final-run.md)。
-- 组委会已确认不提供固定类别列表，由模型自身能力定义语义且模型需适合边缘设备。当前模型权重 4.9 MiB、124 万参数，全量语义位置覆盖率 99.89%。
+- 组委会已确认不提供固定类别列表，由模型自身能力定义语义且模型需适合边缘设备。当前模型权重 4.9 MiB、124 万参数，全量语义位置覆盖率 99.89%；模型体积符合轻量方向，但当前 CUDA 实现尚未在 RK3588 真板验证。
 - 已生成并抽帧验收 113.16 秒的跟随视角 RViz 视频；视频、PCD、bag 和 ZIP 均留在被 Git 忽略的 `data/outputs/`。
 
 ## 第一次配置环境
@@ -90,6 +90,7 @@ python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
 - [已验证的分层架构](docs/architecture.md)
 - [全量候选运行报告](results/final-run.md)
 - [静止、急转弯、RTK间断与动态边界检查](results/robustness-check.md)
+- [RK3588 部署可行性与验收门禁](docs/rk3588-deployment.md)
 - [第三方依赖与许可](docs/third-party.md)
 - [待确认问题与规则冲突](docs/open-questions.md)
 - [数据目录说明](data/README.md)
@@ -133,11 +134,12 @@ python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
 
 ## 生成提交包
 
-获得真实队伍信息并确认官方语义规则后执行：
+正式交付只能由掌握真实身份信息的队长在本地执行。每次打包前重新核对官方页面、群通知和答疑；不要让 Codex 猜测、保存或代填队长姓名与手机号。只改 ZIP 外层文件名是不够的，因为内部目录、邮件主题和清单也包含身份信息，应使用脚本一次性生成：
 
 ```bash
-python scripts/package_submission.py \
+pixi run python scripts/package_submission.py \
   --team '队伍名称' --leader '队长姓名' --phone '队长手机号' \
+  --requirements-confirmed \
   --output data/outputs/大师赛第一期赛题2——队伍名称——队长姓名——队长手机号.zip
 ```
 
