@@ -22,6 +22,43 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def semantic_cloud_display(topic: str = "/semantic_cloud") -> dict:
+    return {
+        "Alpha": 1,
+        "Autocompute Intensity Bounds": True,
+        "Autocompute Value Bounds": {"Max Value": 1, "Min Value": 0, "Value": True},
+        "Axis": "Z",
+        "Channel Name": "rgb",
+        "Class": "rviz_default_plugins/PointCloud2",
+        "Color": "255; 255; 255",
+        "Color Transformer": "RGB8",
+        "Decay Time": 30,
+        "Enabled": True,
+        "Invert Rainbow": False,
+        "Max Color": "255; 255; 255",
+        "Max Intensity": 1,
+        "Min Color": "0; 0; 0",
+        "Min Intensity": 0,
+        "Name": "SemanticCloud (RandLA-Net RGB)",
+        "Position Transformer": "XYZ",
+        "Selectable": True,
+        "Size (Pixels)": 4,
+        "Size (m)": 0.06,
+        "Style": "Flat Squares",
+        "Topic": {
+            "Depth": 5,
+            "Durability Policy": "Volatile",
+            "Filter size": 10,
+            "History Policy": "Keep Last",
+            "Reliability Policy": "Reliable",
+            "Value": topic,
+        },
+        "Use Fixed Frame": True,
+        "Use rainbow": True,
+        "Value": True,
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bag", type=Path)
@@ -30,6 +67,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rate", type=float, default=6.0, help="回放倍率；652 秒以 6x 回放约 109 秒")
     parser.add_argument("--follow-frame", default="body", help="RViz 视角跟随的动态 TF；留空则使用原配置")
     parser.add_argument("--view-distance", type=float, default=45.0, help="跟随视角距离（米）")
+    parser.add_argument(
+        "--semantic-overlay",
+        action="store_true",
+        help="同步发布 /semantic_cloud，并在 RViz 中按模型类别 RGB 着色",
+    )
+    parser.add_argument(
+        "--semantic-map",
+        type=Path,
+        default=PROJECT_ROOT / "data/outputs/final/map_semantic.pcd",
+    )
+    parser.add_argument(
+        "--semantic-trajectory",
+        type=Path,
+        default=PROJECT_ROOT / "data/outputs/fused/trajectory_fused.csv",
+    )
+    parser.add_argument(
+        "--semantic-trajectory-metrics",
+        type=Path,
+        default=PROJECT_ROOT / "data/outputs/fused/trajectory_metrics.json",
+    )
     return parser.parse_args()
 
 
@@ -84,6 +141,14 @@ def main() -> int:
     rviz_config = args.rviz_config.expanduser().resolve()
     if not bag.exists() or not rviz_config.is_file():
         raise SystemExit("视频 bag 或 RViz 配置不存在")
+    semantic_inputs = (
+        args.semantic_map.expanduser().resolve(),
+        args.semantic_trajectory.expanduser().resolve(),
+        args.semantic_trajectory_metrics.expanduser().resolve(),
+    )
+    if args.semantic_overlay and any(not path.is_file() for path in semantic_inputs):
+        missing = [str(path) for path in semantic_inputs if not path.is_file()]
+        raise SystemExit(f"缺少语义录屏输入：{missing}")
     if output.exists():
         raise SystemExit(f"视频已存在，拒绝覆盖：{output}")
     if args.rate <= 0 or args.view_distance <= 0:
@@ -119,6 +184,8 @@ def main() -> int:
         current_view["Target Frame"] = args.follow_frame
         current_view["Distance"] = args.view_distance
         current_view["Focal Point"] = {"X": 0.0, "Y": 0.0, "Z": 0.0}
+    if args.semantic_overlay:
+        rviz_document["Visualization Manager"]["Displays"].append(semantic_cloud_display())
     generated_rviz_config.write_text(
         yaml.safe_dump(rviz_document, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
@@ -128,19 +195,34 @@ def main() -> int:
     ]
     play_command = ["ros2", "bag", "play", str(bag), "--clock", "--rate", str(args.rate)]
     tf_command = [sys.executable, str(PROJECT_ROOT / "scripts/odom_to_tf.py")]
-    rviz = capture = tf_broadcaster = None
+    semantic_command = [
+        sys.executable,
+        str(PROJECT_ROOT / "scripts/publish_semantic_cloud.py"),
+        "--semantic",
+        str(semantic_inputs[0]),
+        "--trajectory",
+        str(semantic_inputs[1]),
+        "--trajectory-metrics",
+        str(semantic_inputs[2]),
+    ]
+    rviz = capture = tf_broadcaster = semantic_publisher = None
     try:
         with ExitStack() as stack:
             rviz_log = stack.enter_context(output.with_suffix(".rviz.log").open("wb"))
             capture_log = stack.enter_context(output.with_suffix(".capture.log").open("wb"))
             play_log = stack.enter_context(output.with_suffix(".play.log").open("wb"))
             tf_log = stack.enter_context(output.with_suffix(".tf.log").open("wb"))
+            semantic_log = stack.enter_context(output.with_suffix(".semantic.log").open("wb"))
             tf_broadcaster = start(tf_command, tf_log)
+            if args.semantic_overlay:
+                semantic_publisher = start(semantic_command, semantic_log)
             rviz = start(rviz_command, rviz_log)
             rviz_xid = find_rviz_window(generated_rviz_config, rviz)
             time.sleep(2)
-            if tf_broadcaster.poll() is not None:
-                raise RuntimeError("RViz 或里程计 TF 广播器启动失败，请检查日志")
+            if tf_broadcaster.poll() is not None or (
+                semantic_publisher is not None and semantic_publisher.poll() is not None
+            ):
+                raise RuntimeError("RViz、TF 或语义发布器启动失败，请检查日志")
             capture_command = [
                 "gst-launch-1.0", "-e", "ximagesrc", "use-damage=false", f"xid={rviz_xid}",
                 "!", "video/x-raw,framerate=30/1", "!", "videoconvert", "!", "queue",
@@ -162,10 +244,13 @@ def main() -> int:
             rviz = None
             stop(tf_broadcaster)
             tf_broadcaster = None
+            stop(semantic_publisher)
+            semantic_publisher = None
     finally:
         stop(capture, interrupt=True)
         stop(rviz)
         stop(tf_broadcaster)
+        stop(semantic_publisher)
     if not output.is_file() or output.stat().st_size == 0:
         raise SystemExit("未生成有效视频")
     print(f"RViz 视频已生成：{output} ({output.stat().st_size / 1024**2:.1f} MiB)")

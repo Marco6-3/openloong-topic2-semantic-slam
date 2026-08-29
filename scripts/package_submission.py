@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--semantic", type=Path, default=Path("data/outputs/final/map_semantic.pcd"))
     parser.add_argument("--path", type=Path, default=Path("data/outputs/fused/path.yaml"))
     parser.add_argument(
-        "--video", type=Path, default=Path("data/outputs/final/rviz_accelerated_follow.webm")
+        "--video", type=Path, default=Path("data/outputs/final/rviz_manual_slam_semantic.webm")
     )
     parser.add_argument("--labels", type=Path, default=Path("config/semantic_labels.yaml"))
     parser.add_argument(

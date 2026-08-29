@@ -15,7 +15,7 @@
 - 已将高质量 RTK 点转换为本地 ENU 轨迹，详见 [RTK 转换说明](docs/rtk-enu.md)。
 - 已用全部 652 秒数据跑通 ROS2 FAST-LIO2、RTK 轨迹融合、逐帧地图重建和 RandLA-Net 语义融合；最终得到 6,518 个轨迹点和 1,524,881 个地图点，详见 [全量候选结果](results/final-run.md)。
 - 组委会已确认不提供固定类别列表，由模型自身能力定义语义且模型需适合边缘设备。当前模型权重 4.9 MiB、124 万参数，全量语义位置覆盖率 99.89%；模型体积符合轻量方向，但当前 CUDA 实现尚未在 RK3588 真板验证。
-- 已生成并抽帧验收 113.16 秒的跟随视角 RViz 视频；视频、PCD、bag 和 ZIP 均留在被 Git 忽略的 `data/outputs/`。
+- 已验证同步语义点云可在 RViz 按类别着色；旧的纯 RViz 视频不再作为最终稿，等待队长按[手动录屏说明](docs/manual-semantic-recording.md)同时录入 RViz 与语义分析终端。视频、PCD、bag 和 ZIP 均留在被 Git 忽略的 `data/outputs/`。
 
 ## 第一次配置环境
 
@@ -91,6 +91,7 @@ python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
 - [全量候选运行报告](results/final-run.md)
 - [静止、急转弯、RTK间断与动态边界检查](results/robustness-check.md)
 - [RK3588 部署可行性与验收门禁](docs/rk3588-deployment.md)
+- [手动录制 SLAM 与语义分析](docs/manual-semantic-recording.md)
 - [第三方依赖与许可](docs/third-party.md)
 - [待确认问题与规则冲突](docs/open-questions.md)
 - [数据目录说明](data/README.md)
@@ -135,6 +136,8 @@ python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
 ## 生成提交包
 
 正式交付只能由掌握真实身份信息的队长在本地执行。每次打包前重新核对官方页面、群通知和答疑；不要让 Codex 猜测、保存或代填队长姓名与手机号。推荐使用私密模式生成内部不含身份信息的包，再由队长仅在本地重命名 ZIP，并把邮件主题设成相同名称：
+
+先按[手动录屏说明](docs/manual-semantic-recording.md)生成 `data/outputs/final/rviz_manual_slam_semantic.webm`；缺少该文件时，默认打包命令会拒绝继续。
 
 ```bash
 pixi run python scripts/package_submission.py \
