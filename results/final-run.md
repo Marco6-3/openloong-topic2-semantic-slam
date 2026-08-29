@@ -60,9 +60,9 @@ FAST-LIO 主链路未使用 GPU，因此上述建图运行的 GPU/显存占用�
 
 ## 视频
 
-旧视频 `data/outputs/final/rviz_accelerated_follow.webm` 为 VP8 WebM，1453×846、30 fps、113.161 秒、49.6 MiB。它证明了 SLAM 全过程和跟随视角，但没有把语义分析终端录入画面，因此不再作为最终提交候选。
+旧视频 `data/outputs/final/rviz_accelerated_follow.webm` 只证明了 SLAM 全过程，没有把语义分析终端录入画面，因此不再作为最终提交候选。
 
-同步语义可视化链路已实测：回放 `/cloud_registered` 时发布含 `rgb`、`label`、`confidence` 的 `/semantic_cloud`，6× 短回放累计位置匹配覆盖约 99%；全量自动预览处理到 6,500 帧时累计覆盖 96.6%，RViz 等间隔抽帧可见持续增长的类别彩色点云。最终录像由队长按 `docs/manual-semantic-recording.md` 整屏录制，同时展示 RViz 和语义终端，并保存为 `data/outputs/final/rviz_manual_slam_semantic.webm`。
+最终候选 `data/outputs/final/rviz_manual_slam_semantic.webm` 为 VP8 WebM，2560×1374、30 fps、115.433 秒、103.0 MiB。它由队长按 `docs/manual-semantic-recording.md` 整屏录制，并从 4814×2584 原片按原始宽高比转码；原片保持不变。画面同时展示持续增长的 RViz 彩色 `SemanticCloud`、轨迹和语义终端，终端披露 RandLA-Net、帧数、累计点数、位置匹配覆盖、平均置信度及主要类别。等间隔抽帧复核了开始、中段和结束区段，结尾可见处理到 6,500 帧且累计覆盖 96.6%。
 
 ## 仍需外部确认
 

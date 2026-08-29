@@ -15,7 +15,7 @@
 - 已将高质量 RTK 点转换为本地 ENU 轨迹，详见 [RTK 转换说明](docs/rtk-enu.md)。
 - 已用全部 652 秒数据跑通 ROS2 FAST-LIO2、RTK 轨迹融合、逐帧地图重建和 RandLA-Net 语义融合；最终得到 6,518 个轨迹点和 1,524,881 个地图点，详见 [全量候选结果](results/final-run.md)。
 - 组委会已确认不提供固定类别列表，由模型自身能力定义语义且模型需适合边缘设备。当前模型权重 4.9 MiB、124 万参数，全量语义位置覆盖率 99.89%；模型体积符合轻量方向，但当前 CUDA 实现尚未在 RK3588 真板验证。
-- 已验证同步语义点云可在 RViz 按类别着色；旧的纯 RViz 视频不再作为最终稿，等待队长按[手动录屏说明](docs/manual-semantic-recording.md)同时录入 RViz 与语义分析终端。视频、PCD、bag 和 ZIP 均留在被 Git 忽略的 `data/outputs/`。
+- 已完成同时包含 RViz 彩色语义点云和语义分析终端的人工录屏；交付版为 2560×1374、30 fps、115.43 秒的 VP8 WebM。视频、PCD、bag 和 ZIP 均留在被 Git 忽略的 `data/outputs/`。
 
 ## 第一次配置环境
 
