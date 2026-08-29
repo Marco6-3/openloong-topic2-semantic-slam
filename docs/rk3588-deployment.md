@@ -59,3 +59,14 @@ KNN 和 cKDTree 属于输入构造，不应塞进 RKNN 图。板端建议用 C++
 - 报告板卡型号、内存、系统镜像、RKNPU 驱动、RKNN Runtime 和 Toolkit2 的精确版本。
 
 这些是项目内部工程门禁，不是组委会公布指标。没有目标 RK3588 开发板及其系统镜像时，只能完成导出和转换侧工作，不能把“算子表看起来支持”写成“已经支持 RK3588”。
+
+## 复赛 YOLOv8n-seg 链路
+
+复赛仿真新增的 YOLOv8n-seg 固定 320 输入 ONNX 为约 340 万参数、13.1 MiB，在 x86 OpenCV DNN CPU 上实测推理中位数 75.7 ms、P95 99.6 ms。Rockchip 官方 `rknn_model_zoo` 已提供 `yolov8_seg` 的 FP16/INT8 示例、转换脚本和 RK3588 目标选项，因此模型路线与 RK3588 工具链是对齐的：
+
+- <https://github.com/airockchip/rknn_model_zoo/tree/main/examples/yolov8_seg>
+- <https://github.com/airockchip/rknn_model_zoo/blob/main/examples/yolov8_seg/python/convert.py>
+
+但当前仓库仍未在具体 RK3588 板卡上转换、精度对齐或测速。可合理判断“适合继续做边缘部署”，不能写成“现版本复制到 3588 就能运行”。板端应复用官方示例把 ONNX 转为 RKNN，NPU 负责实例分割，ARM CPU 负责掩膜后处理、雷达投影和体素融合；Gazebo 和桌面 RViz 只属于 x86 录屏环境，不需要部署到板端。
+
+复赛链路的板端门禁建议为：固定仿真图像集上 RKNN 与 ONNX 检测类别/掩膜 IoU 对齐；完整相机推理、掩膜后处理、点云投影和发布 P95 不超过 200 ms，以维持 VLP-16 的 5 Hz 更新；连续 10 分钟内存稳定且无热降频。FP16 先通过，再评估 INT8 校准集和精度损失。

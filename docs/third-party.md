@@ -8,5 +8,7 @@
 | ikd-Tree | 上述仓库子模块 `e2e3f4e9d3b95a9e66b1ba83dc98d4a05ed8a3c4` | FAST-LIO 增量 KD-tree | 随上游固定子模块获取，不单独分发 |
 | ROS 2 Jazzy / PCL / Eigen / NumPy / rosbags | 具体构建见 `pixi.lock` | 运行环境、点云和 bag 处理 | 各自上游许可；锁文件保存精确来源和版本 |
 | RandLA-Net / Open3D-ML | Open3D-ML 模型动物园 `randlanet_semantickitti_202201071330utc.pth`，SHA-256 `8929a19da311a031245f70cfeaee8221ed50f15c4b932ec34434c9daaf75750a` | 19 类点级语义推理 | Open3D-ML 为 MIT；本仓库保留许可文本并按固定 URL/哈希下载 5,101,179-byte 权重，权重本身不进入 Git |
+| YOLOv8n-seg | Ultralytics v8.4.132，官方 `yolov8n-seg.pt`，SHA-256 `a7cd8f929e1903d78a12a48efecab430209f18dc46cb96c3599a5980c63c423c` | 复赛相机实例分割与雷达点语义关联 | Ultralytics 开源代码和模型按 AGPL-3.0 使用；权重与导出 ONNX 不进入 Git，准备脚本固定版本、URL 和哈希 |
+| slam_toolbox / Gazebo Classic / velodyne_simulator | ROS Noetic 锁定版本及官方赛事源码包 | 复赛二维 SLAM 与仿真传感器 | `slam_toolbox`、赛事车辆包和 `velodyne_simulator` 分别保留上游许可；赛事源码副本只在本地隔离工作区构建，不进入提交源码历史 |
 
 仓库内的 `livox_ros_driver2` 只定义与官方 bag 匹配的离线消息接口，不包含 Livox SDK、设备驱动或厂商二进制文件。`scripts/randlanet_model.py` 只重写了推理所需的网络结构，保留 Open3D 版权说明；完整 MIT 文本见 `third_party/licenses/Open3D-ML-LICENSE`。模型权重由 `scripts/fetch_semantic_model.py` 下载、校验且被 `.gitignore` 排除。

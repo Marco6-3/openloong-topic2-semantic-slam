@@ -2,7 +2,7 @@
 
 本仓库用于协作完成 OpenLoong 大师系列赛第一期赛题二：**具身感知与导航——非结构化场景下的在线语义地图构建与目标关联**。
 
-当前目标是先完成一个稳定、可复现、可提交的初赛基线：使用 MID360 激光雷达、IMU 和 RTK 构建稠密点云地图，输出完整轨迹与语义标注，并录制 RViz 运行视频。在此基础上再加入全局漂移修正、动态物体过滤和语义增强。
+初赛基线已冻结；当前在官方 Gazebo 场景中准备复赛实时链路：车辆自动运动时同步完成 SLAM 定位与建图、轻量模型语义分析、二维/三维语义位置标注和可视化。
 
 ## 当前状态
 
@@ -16,6 +16,7 @@
 - 已用全部 652 秒数据跑通 ROS2 FAST-LIO2、RTK 轨迹融合、逐帧地图重建和 RandLA-Net 语义融合；最终得到 6,518 个轨迹点和 1,524,881 个地图点，详见 [全量候选结果](results/final-run.md)。
 - 组委会已确认不提供固定类别列表，由模型自身能力定义语义且模型需适合边缘设备。当前模型权重 4.9 MiB、124 万参数，全量语义位置覆盖率 99.89%；模型体积符合轻量方向，但当前 CUDA 实现尚未在 RK3588 真板验证。
 - 已完成同时包含 RViz 彩色语义点云和语义分析终端的人工录屏；交付版为 2560×1374、30 fps、115.43 秒的 VP8 WebM。视频、PCD、bag 和 ZIP 均留在被 Git 忽略的 `data/outputs/`。
+- 已在独立 Pixi 环境中跑通官方 ROS Noetic + Gazebo Classic 场景、`slam_toolbox`、YOLOv8n-seg ONNX、相机/雷达语义投影、三维体素地图和自动驾驶路线；不会修改系统 ROS、`~/.gazebo/models` 或本仓库原有 ROS 2 环境。
 
 ## 第一次配置环境
 
@@ -30,9 +31,11 @@ grep -qxF 'eval "$(direnv hook bash)"' ~/.bashrc || printf '\neval "$(direnv hoo
 exec bash
 ```
 
-Zsh 用户把后两行换成：
+Zsh 用户完整执行：
 
 ```zsh
+curl -fsSL https://pixi.sh/install.sh | sh
+sudo apt-get update && sudo apt-get install -y direnv
 grep -qxF 'eval "$(direnv hook zsh)"' ~/.zshrc || printf '\neval "$(direnv hook zsh)"\n' >> ~/.zshrc
 exec zsh
 ```
@@ -79,6 +82,76 @@ python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
 
 需要有意升级依赖时，修改 `pixi.toml` 后执行 `pixi lock`，检查 `pixi.lock` 的变化，再运行 `pixi install --locked`。
 
+## 初赛人工录屏：四个终端同时运行
+
+下面不是四选一。先按编号依次启动，最后四个进程保持同时运行；录屏画面同时包含 RViz 和终端一的语义日志。所有命令都在仓库根目录执行。
+
+终端一（语义发布与日志）：
+
+```bash
+pixi run python scripts/publish_semantic_cloud.py --log-every 50
+```
+
+终端二（跟随视角 TF）：
+
+```bash
+pixi run python scripts/odom_to_tf.py
+```
+
+终端三（RViz）：
+
+```bash
+pixi run ros2 run rviz2 rviz2 \
+  -d data/outputs/final/manual_semantic_recording.rviz \
+  --ros-args -p use_sim_time:=true
+```
+
+开始整屏录制后，终端四启动回放：
+
+```bash
+pixi run ros2 bag play data/outputs/final/rviz_replay \
+  --clock --rate 6.2
+```
+
+完整窗口布局、RViz 检查项和视频校验见[初赛手动录屏说明](docs/manual-semantic-recording.md)。
+
+## 复赛仿真实时语义 SLAM
+
+复赛环境完全位于 `simulation/.pixi` 与被 Git 忽略的 `data/simulation/catkin_ws`。准备过程会按固定 SHA-256 下载官方资源，只给本地副本打坐标系、缺失模型和实时性补丁，并启用官方源码自带的 VLP-16 GPU ray 分支；不执行 `apt install`，也不写 shell 配置或系统 ROS。
+
+首次准备：
+
+```bash
+./scripts/simulation/sim.sh prepare
+./scripts/simulation/sim.sh model
+```
+
+录屏时使用两个终端，按顺序启动后保持同时运行：
+
+终端一（Gazebo、自动路线、SLAM、语义节点和 RViz）：
+
+```bash
+./scripts/simulation/sim.sh demo
+```
+
+等 Gazebo、RViz 已显示数据后，终端二启动联合状态面板，并保持在录屏画面内：
+
+```bash
+./scripts/simulation/sim.sh monitor
+```
+
+状态面板每秒显示仿真实时因子、SLAM 轨迹位姿数、地图尺寸、模型判断的类别与位置关联点、推理耗时及语义地图体素数。因此录像可同时证明 SLAM 算法在运行以及语义分析数据在实时更新。
+
+开始录屏前把 Gazebo、RViz 和终端二平铺到同一桌面：Gazebo 用于证明官方仿真场景与车辆运动，RViz 保留 `SLAM Map`、`SLAM Trajectory`、`Semantic Map`、`3D Semantic Labels` 和 `Semantic Camera`，终端二必须露出完整的一行实时状态。Gazebo 首次打开可能占满屏幕，直接取消最大化并手动缩放即可。建议先录制 60–90 秒；结束时**先停止并保存录屏**，再依次在终端二、终端一按 `Ctrl+C`，避免把 Gazebo Classic 的退出日志录入成片。
+
+开发验收可在仿真运行时从第三个终端执行：
+
+```bash
+./scripts/simulation/sim.sh validate
+```
+
+该命令连续观察 60 秒，检查话题频率、TF 树、车辆位移、地图/轨迹增长、语义输出、推理耗时和实时因子。架构、官方包修正原因与验收边界见[复赛仿真架构](docs/simulation-architecture.md)。
+
 ## 快速入口
 
 - [TODO 与负责人分工](TODO.md)
@@ -89,9 +162,11 @@ python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
 - [技术路线](docs/technical-plan.md)
 - [已验证的分层架构](docs/architecture.md)
 - [全量候选运行报告](results/final-run.md)
+- [复赛实时仿真候选验收](results/simulation-validation.md)
 - [静止、急转弯、RTK间断与动态边界检查](results/robustness-check.md)
 - [RK3588 部署可行性与验收门禁](docs/rk3588-deployment.md)
 - [手动录制 SLAM 与语义分析](docs/manual-semantic-recording.md)
+- [复赛仿真实时语义 SLAM 架构](docs/simulation-architecture.md)
 - [第三方依赖与许可](docs/third-party.md)
 - [待确认问题与规则冲突](docs/open-questions.md)
 - [数据目录说明](data/README.md)

@@ -1,0 +1,65 @@
+<launch>
+  <arg name="gazebo_gui" default="true"/>
+  <arg name="headless" default="false"/>
+  <arg name="paused" default="false"/>
+  <arg name="semantic_enabled" default="true"/>
+  <arg name="semantic_model" default="/tmp/openloong-semantic-model-not-configured.onnx"/>
+  <arg name="auto_drive" default="true"/>
+  <arg name="rviz" default="true"/>
+
+  <include file="$(find vehicle_simulator)/launch/vehicle_simulator.launch">
+    <arg name="world_name" value="house"/>
+    <arg name="gui" value="$(arg gazebo_gui)"/>
+    <arg name="headless" value="$(arg headless)"/>
+    <arg name="paused" value="$(arg paused)"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="use_gazebo_time" value="true"/>
+  </include>
+
+  <node pkg="tf2_ros" type="static_transform_publisher" name="sensor_to_velodyne"
+        args="0 0 0.0377 0 0 0 sensor velodyne"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="sensor_to_camera"
+        args="0 0 0 0 0 0 sensor camera"/>
+
+  <node pkg="openloong_semantic_slam" type="vlp16_to_laserscan.py"
+        name="vlp16_to_laserscan" output="screen">
+    <remap from="velodyne_points" to="/velodyne_points"/>
+    <remap from="scan" to="/scan"/>
+    <param name="min_height" value="-0.35"/>
+    <param name="max_height" value="0.35"/>
+    <param name="range_min" value="0.30"/>
+    <param name="range_max" value="25.0"/>
+    <param name="bins" value="720"/>
+  </node>
+
+  <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
+    <rosparam command="load" file="$(find openloong_semantic_slam)/config/slam_toolbox.yaml"/>
+  </node>
+
+  <node pkg="openloong_semantic_slam" type="slam_path_node.py"
+        name="slam_path_node" output="screen"/>
+
+  <group if="$(arg semantic_enabled)">
+    <node pkg="openloong_semantic_slam" type="semantic_mapper.py"
+          name="semantic_mapper" output="screen" required="true">
+      <param name="model_path" value="$(arg semantic_model)"/>
+      <param name="labels_path" value="$(find openloong_semantic_slam)/config/coco80.yaml"/>
+      <param name="input_size" value="320"/>
+      <param name="confidence" value="0.25"/>
+      <param name="iou" value="0.45"/>
+      <param name="voxel_size" value="0.10"/>
+      <param name="max_voxels" value="200000"/>
+      <param name="map_publish_period" value="2.0"/>
+    </node>
+  </group>
+
+  <group if="$(arg auto_drive)">
+    <node pkg="openloong_semantic_slam" type="demo_driver.py"
+          name="demo_driver" output="screen"/>
+  </group>
+
+  <group if="$(arg rviz)">
+    <node pkg="rviz" type="rviz" name="semantic_slam_rviz"
+          args="-d $(find openloong_semantic_slam)/rviz/semantic_slam.rviz" output="screen"/>
+  </group>
+</launch>

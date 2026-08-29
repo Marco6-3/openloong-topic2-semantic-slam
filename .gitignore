@@ -22,6 +22,8 @@ data/raw/
 data/samples/
 data/intermediate/
 data/outputs/
+data/simulation/
+/simulation/data/
 results/artifacts/
 src/fast_lio/
 

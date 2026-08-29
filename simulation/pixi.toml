@@ -1,0 +1,36 @@
+[workspace]
+name = "openloong-topic2-simulation"
+version = "0.1.0"
+description = "Isolated ROS Noetic and Gazebo Classic environment for the OpenLoong semifinal"
+authors = ["OpenLoong Topic 2 Team"]
+channels = ["https://prefix.dev/robostack-noetic", "conda-forge"]
+channel-priority = "strict"
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.12.*"
+numpy = ">=1.26,<3"
+cmake = ">=3.28,<4"
+make = ">=4.4,<5"
+pkg-config = ">=0.29,<1"
+cxx-compiler = ">=1.7,<2"
+ros-noetic-ros-base = ">=1.5,<1.6"
+ros-noetic-gazebo-ros-pkgs = ">=2.9,<3"
+ros-noetic-rviz = ">=1.14,<1.15"
+ros-noetic-pcl-ros = ">=1.7,<1.8"
+ros-noetic-cv-bridge = ">=1.16,<1.17"
+ros-noetic-image-transport = ">=1.12,<1.13"
+ros-noetic-xacro = ">=1.14,<1.15"
+ros-noetic-tf2-ros = ">=0.7,<0.8"
+ros-noetic-tf2-sensor-msgs = ">=0.7,<0.8"
+ros-noetic-slam-toolbox = ">=1.5,<1.6"
+ros-noetic-teleop-twist-keyboard = ">=1.0,<1.1"
+
+[tasks]
+setup = { cmd = "bash ../scripts/simulation/setup_official_sim.sh", description = "下载、校验并准备官方 Gazebo 资源" }
+build = { depends-on = ["setup"], cmd = "bash ../scripts/simulation/build_sim.sh", description = "在隔离 catkin 工作区构建官方仿真与语义 SLAM 节点" }
+check = { depends-on = ["build"], cmd = "bash ../scripts/simulation/check_sim.sh", description = "检查仿真依赖、模型与 ROS 包" }
+demo = { cmd = "bash ../scripts/simulation/run_demo.sh", description = "启动 Gazebo、实时语义 SLAM 与 RViz" }
+monitor = { cmd = "bash ../scripts/simulation/run_monitor.sh", description = "显示录屏所需的 SLAM 与语义实时状态" }
+semantic-log = { cmd = "bash ../scripts/simulation/run_semantic_log.sh", description = "输出原始语义状态 JSON" }
+validate = { cmd = "bash ../scripts/simulation/run_validation.sh", description = "验收运行中的话题频率、TF、SLAM、语义与实时性" }
