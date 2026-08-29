@@ -1,0 +1,54 @@
+# 比赛数据与输出
+*.bag
+*.bag.active
+*.pcd
+*.ply
+*.las
+*.laz
+*.mp4
+*.avi
+*.mkv
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.pth
+*.pt
+*.onnx
+*.engine
+
+data/raw/
+data/samples/
+data/intermediate/
+data/outputs/
+results/artifacts/
+
+# ROS/catkin
+build/
+devel/
+install/
+logs/
+log/
+.catkin_tools/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地环境与秘密
+.env
+.env.*
+!.env.example
+*.pem
+*.key
