@@ -8,14 +8,15 @@
 
 - 已报名赛题二。
 - 初赛截止时间：**2026-09-13 23:59（北京时间）**。
-- 官方数据包约 2.36 GiB，尚未纳入仓库。
+- 官方数据包约 2.36 GiB，已在本地完成校验和只读审计，但不纳入仓库。
 - 已核实公开数据说明、轨迹样例及仿真包结构。
-- 尚未完成原始 ROS bag 的本地只读审计，因此消息类型、点级时间戳、外参和隐藏话题仍待确认。
+- 已确认 LiDAR 为 Livox CustomMsg 且含点级时间戳；bag 内无相机、里程计、TF 或外参，详见 [bag 审计](docs/bag-audit.md)。
 
 ## 快速入口
 
 - [TODO 与负责人分工](TODO.md)
 - [官方资料与已确认事实](docs/official-resources.md)
+- [初赛 bag 审计与复现命令](docs/bag-audit.md)
 - [技术路线](docs/technical-plan.md)
 - [待确认问题与规则冲突](docs/open-questions.md)
 - [数据目录说明](data/README.md)

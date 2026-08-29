@@ -8,14 +8,14 @@
 
 ### 8月29日—8月30日：数据审计
 
-- [ ] 下载官方 `data.bag`，记录文件大小、SHA-256 和下载时间。负责人：待认领
-- [ ] 执行 `rosbag info`，记录全部话题、消息类型、消息数量、频率和时长。负责人：待认领
-- [ ] 确认 `/livox/lidar` 是 CustomMsg 还是 PointCloud2。负责人：待认领
-- [ ] 检查每点时间戳字段能否满足运动畸变补偿。负责人：待认领
-- [ ] 核实 LiDAR、IMU、RTK 的 `frame_id`、时间同步和外参来源。负责人：待认领
-- [ ] 检查实际 bag 中是否存在公开说明未列出的相机或里程计话题。负责人：待认领
-- [ ] 截取 30—60 秒开发用小 bag，并记录截取命令。负责人：待认领
-- [ ] 将审计结果写入 `docs/bag-audit.md`。负责人：待认领
+- [x] 下载官方 `data.bag`，记录文件大小、SHA-256 和下载时间。负责人：Codex（见 `docs/bag-audit.md`）
+- [x] 等价只读审计全部话题、消息类型、消息数量、频率和时长。负责人：Codex（本机无 ROS1，使用 `rosbags`）
+- [x] 确认 `/livox/lidar` 是 CustomMsg 还是 PointCloud2。负责人：Codex（确认为 Livox CustomMsg）
+- [x] 检查每点时间戳字段能否满足运动畸变补偿。负责人：Codex（存在纳秒 `offset_time`）
+- [x] 核实 LiDAR、IMU、RTK 的 `frame_id`、时间同步和外参来源。负责人：Codex（bag 内无 TF/外参，已记录阻塞边界）
+- [x] 检查实际 bag 中是否存在公开说明未列出的相机或里程计话题。负责人：Codex（不存在）
+- [x] 截取 30—60 秒开发用小 bag，并记录截取命令。负责人：Codex（60 秒样例已回读验证，不提交 Git）
+- [x] 将审计结果写入 `docs/bag-audit.md`。负责人：Codex
 
 验收条件：其他成员仅依据文档即可重现 RViz 播放并理解所有坐标系和消息类型。
 
