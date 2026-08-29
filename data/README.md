@@ -15,6 +15,15 @@ sha256sum data.bag
 rosbag info data.bag
 ```
 
+2026-08-29 实际下载校验值：
+
+```text
+size:   2532226415 bytes
+sha256: 35ec4e14c13aeceb238f0ac1edd171a255d7615b1a1bc6204f79679b29156ae2
+```
+
+没有 ROS1 环境时，可按 [`docs/bag-audit.md`](../docs/bag-audit.md) 使用仓库内的跨平台只读审计和截取脚本。
+
 将以下信息写入 `docs/bag-audit.md`：
 
 - SHA-256；
