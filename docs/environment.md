@@ -14,6 +14,7 @@
 | Eigen | 5.0.1 |
 | NumPy | 2.5.2 |
 | rosbags | 0.11.5 |
+| PyTorch（独立 `semantic-gpu` 环境） | 2.9.1 / CUDA 12.9 |
 | Pixi | 0.76.0（宿主工具，不由项目锁定） |
 | direnv | 2.32.1（宿主工具，不由项目锁定） |
 
@@ -27,6 +28,8 @@
 - `scripts/check_environment.py` 检查 Jazzy、RViz、rosbag2、PCL、Eigen、编译器和 Python 包。
 
 `.pixi/` 是每台机器的本地环境，不提交 Git。锁文件必须提交。
+
+默认环境不安装 PyTorch，避免让没有 NVIDIA GPU 的建图成员承担 CUDA 依赖。语义推理单独执行 `pixi install -e semantic-gpu --locked`；该环境已在 RTX 4090 上验证。模型本身只有 4.9 MiB，但当前 CUDA 开发环境不代表最终边缘部署镜像大小，部署前仍需针对指定硬件转换和测速。
 
 ## ROS1 bag 与 ROS 2 的边界
 

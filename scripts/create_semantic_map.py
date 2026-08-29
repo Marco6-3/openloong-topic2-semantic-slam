@@ -21,7 +21,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="几何 PCD")
     parser.add_argument("output", type=Path, help="带 label/confidence/rgb 的 PCD（必须不存在）")
-    parser.add_argument("--labels", type=Path, default=Path("config/semantic_labels.yaml"))
+    parser.add_argument(
+        "--labels", type=Path, default=Path("config/semantic_labels_geometry.yaml")
+    )
     parser.add_argument("--metadata", type=Path, help="分类摘要 JSON")
     parser.add_argument("--cell-size", type=float, default=0.5)
     parser.add_argument("--ground-height", type=float, default=0.25)

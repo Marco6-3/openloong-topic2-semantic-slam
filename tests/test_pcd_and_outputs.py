@@ -26,6 +26,21 @@ def test_binary_pcd_round_trip_and_validation(tmp_path: Path) -> None:
     assert report["points"] == 2
 
 
+def test_semantic_pcd_validation_checks_confidence_and_labels(tmp_path: Path) -> None:
+    points = np.asarray(
+        [(1.0, 2.0, 3.0, 1, 0.25, 0), (2.0, 3.0, 4.0, 9, 0.75, 0)],
+        dtype=[
+            ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("label", "<u2"),
+            ("confidence", "<f4"), ("rgb", "<u4"),
+        ],
+    )
+    path = tmp_path / "semantic.pcd"
+    write_pcd(path, points)
+    report = validate_pcd(path, ("label", "confidence", "rgb"))
+    assert report["label_counts"] == {"1": 1, "9": 1}
+    assert report["confidence"] == {"min": 0.25, "max": 0.75, "mean": 0.5}
+
+
 def test_path_validation(tmp_path: Path) -> None:
     path = tmp_path / "path.yaml"
     path.write_text(

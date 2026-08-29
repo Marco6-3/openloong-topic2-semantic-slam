@@ -39,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         "--video", type=Path, default=Path("data/outputs/final/rviz_accelerated_follow.webm")
     )
     parser.add_argument("--labels", type=Path, default=Path("config/semantic_labels.yaml"))
+    parser.add_argument(
+        "--semantic-metrics",
+        type=Path,
+        default=Path("data/outputs/final/semantic_metrics.json"),
+    )
     parser.add_argument("--output", type=Path, required=True, help="输出 ZIP（必须不存在）")
     return parser.parse_args()
 
@@ -74,6 +79,7 @@ def main() -> int:
         "path.yaml": args.path.expanduser().resolve(),
         "rviz_demo.webm": args.video.expanduser().resolve(),
         "semantic_labels.yaml": args.labels.expanduser().resolve(),
+        "semantic_metrics.json": args.semantic_metrics.expanduser().resolve(),
     }
     missing = [str(path) for path in sources.values() if not path.is_file()]
     if missing:
@@ -106,7 +112,7 @@ def main() -> int:
                 "video": video_report,
             },
             "coordinate_frame": "map_geometry.pcd and map_semantic.pcd use local ENU; origin is recorded in project RTK metadata",
-            "semantic_status": "internal geometry baseline pending official class/format confirmation",
+            "semantic_status": "RandLA-Net model-defined classes with per-point confidence and multi-frame ENU fusion",
         }
         (root / "submission_manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

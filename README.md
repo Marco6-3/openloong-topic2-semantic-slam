@@ -13,7 +13,8 @@
 - 已确认 LiDAR 为 Livox CustomMsg 且含点级时间戳；bag 内无相机、里程计、TF 或外参，详见 [bag 审计](docs/bag-audit.md)。
 - 已锁定 ROS 2 Jazzy + Pixi 开发环境，并用 direnv 在进入目录时自动按 `pixi.lock` 激活。
 - 已将高质量 RTK 点转换为本地 ENU 轨迹，详见 [RTK 转换说明](docs/rtk-enu.md)。
-- 已用全部 652 秒数据跑通 ROS2 FAST-LIO2、RTK 轨迹融合、逐帧地图重建、语义字段和交付校验；最终得到 6,518 个轨迹点和 1,524,881 个地图点，详见 [全量候选结果](results/final-run.md)。
+- 已用全部 652 秒数据跑通 ROS2 FAST-LIO2、RTK 轨迹融合、逐帧地图重建和 RandLA-Net 语义融合；最终得到 6,518 个轨迹点和 1,524,881 个地图点，详见 [全量候选结果](results/final-run.md)。
+- 组委会已确认不提供固定类别列表，由模型自身能力定义语义且模型需适合边缘设备。当前模型权重 4.9 MiB、124 万参数，全量语义位置覆盖率 99.89%。
 - 已生成并抽帧验收 113.16 秒的跟随视角 RViz 视频；视频、PCD、bag 和 ZIP 均留在被 Git 忽略的 `data/outputs/`。
 
 ## 第一次配置环境
@@ -60,7 +61,10 @@ pixi run convert-bag # ROS1 bag 转换并核对为 ROS2 MCAP
 pixi run baseline   # 2x 完整运行 FAST-LIO2，并执行丢帧门禁
 pixi run fuse       # LIO + RTK 融合并导出官方格式 path.yaml
 pixi run rebuild-map # 逐帧全局校正后重建 ENU 地图
-pixi run semantic   # 生成保守的几何语义字段基线
+pixi install -e semantic-gpu --locked # 单独安装 GPU 语义环境
+pixi run -e semantic-gpu semantic # 下载固定权重、逐帧推理并做多帧融合
+pixi run -e semantic-gpu semantic-test # 验证网络结构与固定权重兼容性
+pixi run semantic-fallback # 仅在模型不可用时生成几何语义兜底
 pixi run validate-output # 校验最终 PCD 和 YAML
 pixi run retime-video # 重建使用 Header 时间戳的可视化 bag
 pixi run record-video # 6x 录制跟随机体的 RViz 视频（需要 DISPLAY）
@@ -124,7 +128,7 @@ python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
 - 官方规则说明比赛数据不得用于商业用途。
 - 数据包、模型权重、PCD、bag、视频和压缩包不进入 Git 历史。
 - 当前技术路线是团队工程方案，不等同于组委会指定方案。
-- 语义类别、标注格式、坐标系和具体评分指标尚未公开，必须得到组委会答复后再锁定最终输出格式。
+- 语义类别已按组委会答复由轻量模型定义；PCD 字段和具体评分指标仍未公开，因此同时提交字段说明与模型运行指标。
 
 ## 生成提交包
 

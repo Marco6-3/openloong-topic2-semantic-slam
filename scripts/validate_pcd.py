@@ -39,7 +39,7 @@ def validate(path: Path, required: tuple[str, ...] = ()) -> dict[str, object]:
         axis: {"min": float(xyz[:, index].min()), "max": float(xyz[:, index].max())}
         for index, axis in enumerate(("x", "y", "z"))
     }
-    return {
+    report: dict[str, object] = {
         "valid": True,
         "path": str(path.expanduser().resolve()),
         "size_bytes": path.stat().st_size,
@@ -49,6 +49,25 @@ def validate(path: Path, required: tuple[str, ...] = ()) -> dict[str, object]:
         "finite_xyz_points": int(np.count_nonzero(finite)),
         "bounds_m": bounds,
     }
+    if "confidence" in required:
+        confidence = np.asarray(points["confidence"], dtype=np.float64)
+        if not np.all(np.isfinite(confidence)):
+            raise ValueError("PCD confidence 含非有限值")
+        if np.any((confidence < 0) | (confidence > 1)):
+            raise ValueError("PCD confidence 超出 [0, 1]")
+        report["confidence"] = {
+            "min": float(confidence.min()),
+            "max": float(confidence.max()),
+            "mean": float(confidence.mean()),
+        }
+    if "label" in required:
+        labels = np.asarray(points["label"])
+        identifiers, counts = np.unique(labels, return_counts=True)
+        report["label_counts"] = {
+            str(int(identifier)): int(count)
+            for identifier, count in zip(identifiers, counts, strict=True)
+        }
+    return report
 
 
 def main() -> int:
