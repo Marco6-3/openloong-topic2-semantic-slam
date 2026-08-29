@@ -89,6 +89,7 @@ python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
 - [技术路线](docs/technical-plan.md)
 - [已验证的分层架构](docs/architecture.md)
 - [全量候选运行报告](results/final-run.md)
+- [静止、急转弯、RTK间断与动态边界检查](results/robustness-check.md)
 - [第三方依赖与许可](docs/third-party.md)
 - [待确认问题与规则冲突](docs/open-questions.md)
 - [数据目录说明](data/README.md)
