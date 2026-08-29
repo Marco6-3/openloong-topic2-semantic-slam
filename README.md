@@ -11,13 +11,81 @@
 - 官方数据包约 2.36 GiB，已在本地完成校验和只读审计，但不纳入仓库。
 - 已核实公开数据说明、轨迹样例及仿真包结构。
 - 已确认 LiDAR 为 Livox CustomMsg 且含点级时间戳；bag 内无相机、里程计、TF 或外参，详见 [bag 审计](docs/bag-audit.md)。
+- 已锁定 ROS 2 Jazzy + Pixi 开发环境，并用 direnv 在进入目录时自动按 `pixi.lock` 激活。
+- 已将高质量 RTK 点转换为本地 ENU 轨迹，详见 [RTK 转换说明](docs/rtk-enu.md)。
+- 已用全部 652 秒数据跑通 ROS2 FAST-LIO2、RTK 轨迹融合、逐帧地图重建、语义字段和交付校验；最终得到 6,518 个轨迹点和 1,524,881 个地图点，详见 [全量候选结果](results/final-run.md)。
+- 已生成并抽帧验收 113.16 秒的跟随视角 RViz 视频；视频、PCD、bag 和 ZIP 均留在被 Git 忽略的 `data/outputs/`。
+
+## 第一次配置环境
+
+适用于 x86_64 Ubuntu 24.04。先安装 [Pixi](https://pixi.prefix.dev/latest/installation/) 和 [direnv](https://direnv.net/docs/installation.html)，再按当前使用的 shell 配置 hook。
+
+Bash 用户执行：
+
+```bash
+curl -fsSL https://pixi.sh/install.sh | sh
+sudo apt-get update && sudo apt-get install -y direnv
+grep -qxF 'eval "$(direnv hook bash)"' ~/.bashrc || printf '\neval "$(direnv hook bash)"\n' >> ~/.bashrc
+exec bash
+```
+
+Zsh 用户把后两行换成：
+
+```zsh
+grep -qxF 'eval "$(direnv hook zsh)"' ~/.zshrc || printf '\neval "$(direnv hook zsh)"\n' >> ~/.zshrc
+exec zsh
+```
+
+Pixi 安装脚本会把 `~/.pixi/bin` 写入 shell 启动配置；重新启动 shell 后可用 `pixi --version` 和 `direnv version` 检查安装结果。
+
+在仓库根目录依次执行：
+
+```bash
+pixi install --locked
+pixi run setup
+direnv allow
+```
+
+完成。以后只要 `cd` 进入本仓库，`.envrc` 就会执行 `pixi shell-hook --locked`：锁文件和 `pixi.toml` 不一致时会直接报错，不会自动更新依赖。
+
+常用命令：
+
+```bash
+pixi run check      # 检查 ROS、PCL、Eigen、编译器等版本
+pixi run test       # 运行测试
+pixi run audit-bag  # 审计 data/data.bag
+pixi run rtk-enu    # 导出 RTK 的 ENU 轨迹
+pixi run build      # colcon 构建 src/
+pixi run convert-bag # ROS1 bag 转换并核对为 ROS2 MCAP
+pixi run baseline   # 2x 完整运行 FAST-LIO2，并执行丢帧门禁
+pixi run fuse       # LIO + RTK 融合并导出官方格式 path.yaml
+pixi run rebuild-map # 逐帧全局校正后重建 ENU 地图
+pixi run semantic   # 生成保守的几何语义字段基线
+pixi run validate-output # 校验最终 PCD 和 YAML
+pixi run retime-video # 重建使用 Header 时间戳的可视化 bag
+pixi run record-video # 6x 录制跟随机体的 RViz 视频（需要 DISPLAY）
+pixi run validate-video # 校验编码、分辨率和 <=2 分钟门禁
+```
+
+比赛数据默认放在 `data/data.bag`，不会进入 Git。若放在其他位置，可以直接给脚本传路径，例如：
+
+```bash
+python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
+```
+
+需要有意升级依赖时，修改 `pixi.toml` 后执行 `pixi lock`，检查 `pixi.lock` 的变化，再运行 `pixi install --locked`。
 
 ## 快速入口
 
 - [TODO 与负责人分工](TODO.md)
 - [官方资料与已确认事实](docs/official-resources.md)
 - [初赛 bag 审计与复现命令](docs/bag-audit.md)
+- [ROS 2 Jazzy 环境与边界](docs/environment.md)
+- [RTK 转 ENU 与质量过滤](docs/rtk-enu.md)
 - [技术路线](docs/technical-plan.md)
+- [已验证的分层架构](docs/architecture.md)
+- [全量候选运行报告](results/final-run.md)
+- [第三方依赖与许可](docs/third-party.md)
 - [待确认问题与规则冲突](docs/open-questions.md)
 - [数据目录说明](data/README.md)
 - [协作约定](CONTRIBUTING.md)
@@ -35,6 +103,7 @@
 ```text
 .
 ├─ README.md
+├─ pixi.toml / pixi.lock / .envrc
 ├─ TODO.md
 ├─ CONTRIBUTING.md
 ├─ docs/
@@ -44,8 +113,9 @@
 ├─ data/
 │  └─ README.md
 ├─ config/              # 后续存放最终可复现参数
-├─ scripts/             # 后续存放数据审计、转换和导出脚本
-├─ src/                 # 后续存放自研 ROS 包或节点
+├─ scripts/             # 数据审计、转换、环境检查和导出脚本
+├─ tests/               # 可重复的自动化测试
+├─ src/                 # 自研 ROS 2 包或节点
 └─ results/             # 仅保留小型指标和说明，不存大文件
 ```
 
@@ -55,3 +125,15 @@
 - 数据包、模型权重、PCD、bag、视频和压缩包不进入 Git 历史。
 - 当前技术路线是团队工程方案，不等同于组委会指定方案。
 - 语义类别、标注格式、坐标系和具体评分指标尚未公开，必须得到组委会答复后再锁定最终输出格式。
+
+## 生成提交包
+
+获得真实队伍信息并确认官方语义规则后执行：
+
+```bash
+python scripts/package_submission.py \
+  --team '队伍名称' --leader '队长姓名' --phone '队长手机号' \
+  --output data/outputs/大师赛第一期赛题2——队伍名称——队长姓名——队长手机号.zip
+```
+
+脚本会再次校验两个 PCD、轨迹和视频，写入 SHA-256 清单并检查 500 MiB 上限，但不会自动发送邮件。

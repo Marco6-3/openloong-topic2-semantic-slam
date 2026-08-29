@@ -1,0 +1,26 @@
+version: 1
+status: internal_geometry_baseline
+labels:
+  - id: 0
+    name: unknown
+    color_rgb: [128, 128, 128]
+    dynamic: false
+  - id: 1
+    name: ground
+    color_rgb: [160, 120, 60]
+    dynamic: false
+  - id: 2
+    name: low_object
+    color_rgb: [255, 170, 0]
+    dynamic: unknown
+  - id: 3
+    name: structure
+    color_rgb: [70, 130, 220]
+    dynamic: false
+  - id: 4
+    name: dynamic_candidate
+    color_rgb: [220, 40, 40]
+    dynamic: true
+notes:
+  - 这是组委会公布正式类别前的内部几何基线，不代表官方标签集。
+  - ground/low_object/structure 只由局部高度启发式产生；不伪称车辆或行人识别结果。
