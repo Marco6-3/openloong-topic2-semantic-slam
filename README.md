@@ -134,7 +134,15 @@ python scripts/export_rtk_enu.py /path/to/data.bag data/intermediate/rtk_enu.csv
 
 ## 生成提交包
 
-正式交付只能由掌握真实身份信息的队长在本地执行。每次打包前重新核对官方页面、群通知和答疑；不要让 Codex 猜测、保存或代填队长姓名与手机号。只改 ZIP 外层文件名是不够的，因为内部目录、邮件主题和清单也包含身份信息，应使用脚本一次性生成：
+正式交付只能由掌握真实身份信息的队长在本地执行。每次打包前重新核对官方页面、群通知和答疑；不要让 Codex 猜测、保存或代填队长姓名与手机号。推荐使用私密模式生成内部不含身份信息的包，再由队长仅在本地重命名 ZIP，并把邮件主题设成相同名称：
+
+```bash
+pixi run python scripts/package_submission.py \
+  --private-rename --requirements-confirmed \
+  --output data/outputs/submission_ready_to_rename.zip
+```
+
+也可以由队长完全在本地一次性生成最终名称：
 
 ```bash
 pixi run python scripts/package_submission.py \

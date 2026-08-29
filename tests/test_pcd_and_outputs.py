@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from scripts.create_semantic_map import classify_geometry
-from scripts.package_submission import main as package_submission
+from scripts.package_submission import main as package_submission, resolve_identity
 from scripts.pcd_io import read_pcd, write_pcd
 from scripts.validate_path import validate as validate_path
 from scripts.validate_pcd import validate as validate_pcd
@@ -104,3 +104,27 @@ def test_submission_package_requires_fresh_requirements_confirmation(
     )
     with pytest.raises(SystemExit, match="--requirements-confirmed"):
         package_submission()
+
+
+def test_private_submission_omits_identity() -> None:
+    root_name, manifest = resolve_identity(
+        type(
+            "Args",
+            (),
+            {"private_rename": True, "team": None, "leader": None, "phone": None},
+        )()
+    )
+    assert root_name == "大师赛第一期赛题2_交付内容"
+    assert "team" not in manifest
+    assert "leader" not in manifest
+    assert "phone" not in manifest
+
+
+def test_private_submission_rejects_identity() -> None:
+    args = type(
+        "Args",
+        (),
+        {"private_rename": True, "team": "队伍", "leader": None, "phone": None},
+    )()
+    with pytest.raises(SystemExit, match="不得同时传入"):
+        resolve_identity(args)
