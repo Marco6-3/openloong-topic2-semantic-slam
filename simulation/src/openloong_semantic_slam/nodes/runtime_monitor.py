@@ -50,14 +50,19 @@ class RuntimeMonitor:
     def report(self, _event: rospy.timer.TimerEvent) -> None:
         detections = self.semantic.get("detections", [])
         names = ",".join(detections) if detections else "无"
+        sync_ms = float(self.semantic.get("image_cloud_delta_ms", 0.0))
+        geometry_rejected = int(self.semantic.get("geometry_capacity_rejections", 0))
+        semantic_rejected = int(self.semantic.get("semantic_capacity_rejections", 0))
         print(
             "[复赛实时状态] "
             f"RTF={self.real_time_factor:.2f} | SLAM轨迹={self.path_poses}位姿 | 地图={self.map_size} | "
-            f"语义帧={self.semantic.get('frame', 0)} 推理={self.semantic.get('inference_ms', 0):.1f}ms "
+            f"语义帧={self.semantic.get('frame', 0)} 同步={sync_ms:.1f}ms "
+            f"推理={self.semantic.get('inference_ms', 0):.1f}ms "
             f"总耗时={self.semantic.get('pipeline_ms', 0):.1f}ms | 类别=[{names}] "
             f"关联点={self.semantic.get('associated_points', 0)} "
             f"几何体素={self.semantic.get('geometry_voxels', 0)} "
-            f"语义体素={self.semantic.get('semantic_voxels', 0)}",
+            f"语义体素={self.semantic.get('semantic_voxels', 0)} "
+            f"容量拒绝=G{geometry_rejected}/S{semantic_rejected}",
             flush=True,
         )
 

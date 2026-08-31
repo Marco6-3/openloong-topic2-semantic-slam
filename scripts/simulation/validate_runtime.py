@@ -65,6 +65,12 @@ class RuntimeValidator:
             return header.stamp.to_sec()
         return rospy.Time.now().to_sec()
 
+    @staticmethod
+    def percentile_95(values: list[float]) -> float | None:
+        if not values:
+            return None
+        return round(sorted(values)[int(0.95 * (len(values) - 1))], 2)
+
     def observe(self, message, name: str) -> None:
         stamp = self.message_stamp(message)
         sample = self.samples.setdefault(name, {"count": 0, "first": stamp, "last": stamp})
@@ -130,12 +136,35 @@ class RuntimeValidator:
 
         inference = [float(item.get("inference_ms", 0.0)) for item in self.semantic_statuses]
         pipeline = [float(item.get("pipeline_ms", 0.0)) for item in self.semantic_statuses]
+        image_cloud_delta = [
+            float(item["image_cloud_delta_ms"])
+            for item in self.semantic_statuses
+            if "image_cloud_delta_ms" in item
+        ]
+        info_cloud_delta = [
+            float(item["camera_info_cloud_delta_ms"])
+            for item in self.semantic_statuses
+            if "camera_info_cloud_delta_ms" in item
+        ]
+        sync_rejected = max(
+            (int(item.get("sync_rejected", 0)) for item in self.semantic_statuses),
+            default=0,
+        )
+        geometry_capacity_rejections = max(
+            (int(item.get("geometry_capacity_rejections", 0)) for item in self.semantic_statuses),
+            default=0,
+        )
+        semantic_capacity_rejections = max(
+            (int(item.get("semantic_capacity_rejections", 0)) for item in self.semantic_statuses),
+            default=0,
+        )
         detected = sorted({name for item in self.semantic_statuses for name in item.get("detections", [])})
         tf_checks = {
             "map_to_odom": self.frame_exists("map", "odom"),
             "odom_to_sensor": self.frame_exists("odom", "sensor"),
             "sensor_to_velodyne": self.frame_exists("sensor", "velodyne"),
             "sensor_to_camera": self.frame_exists("sensor", "camera"),
+            "camera_to_velodyne": self.frame_exists("camera", "velodyne"),
         }
         report = {
             "wall_duration_s": round(wall_duration, 2),
@@ -151,8 +180,13 @@ class RuntimeValidator:
             "semantic_frames": len(self.semantic_statuses),
             "semantic_classes_seen": detected,
             "inference_ms_median": round(statistics.median(inference), 2) if inference else None,
-            "inference_ms_p95": round(sorted(inference)[int(0.95 * (len(inference) - 1))], 2) if inference else None,
-            "pipeline_ms_p95": round(sorted(pipeline)[int(0.95 * (len(pipeline) - 1))], 2) if pipeline else None,
+            "inference_ms_p95": self.percentile_95(inference),
+            "pipeline_ms_p95": self.percentile_95(pipeline),
+            "image_cloud_delta_ms_p95": self.percentile_95(image_cloud_delta),
+            "camera_info_cloud_delta_ms_p95": self.percentile_95(info_cloud_delta),
+            "sync_rejected": sync_rejected,
+            "geometry_capacity_rejections": geometry_capacity_rejections,
+            "semantic_capacity_rejections": semantic_capacity_rejections,
             "tf": tf_checks,
         }
 
@@ -185,6 +219,21 @@ class RuntimeValidator:
             failures.append(f"semantic inference p95 {report['inference_ms_p95']:.1f} ms > 160 ms")
         if pipeline and report["pipeline_ms_p95"] > 400.0:
             failures.append(f"semantic pipeline p95 {report['pipeline_ms_p95']:.1f} ms > 400 ms")
+        if self.semantic_statuses and len(image_cloud_delta) != len(self.semantic_statuses):
+            failures.append("semantic status is missing image-cloud synchronization diagnostics")
+        if self.semantic_statuses and len(info_cloud_delta) != len(self.semantic_statuses):
+            failures.append("semantic status is missing camera-info synchronization diagnostics")
+        if image_cloud_delta and report["image_cloud_delta_ms_p95"] > 50.0:
+            failures.append(
+                f"image-cloud timestamp delta p95 {report['image_cloud_delta_ms_p95']:.1f} ms > 50 ms"
+            )
+        if info_cloud_delta and report["camera_info_cloud_delta_ms_p95"] > 50.0:
+            failures.append(
+                "camera-info/cloud timestamp delta p95 "
+                f"{report['camera_info_cloud_delta_ms_p95']:.1f} ms > 50 ms"
+            )
+        if sync_rejected:
+            failures.append(f"semantic synchronizer rejected {sync_rejected} matched message sets")
         for name, connected in tf_checks.items():
             if not connected:
                 failures.append(f"TF check failed: {name}")

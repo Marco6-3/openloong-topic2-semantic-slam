@@ -4,6 +4,8 @@
   <arg name="paused" default="false"/>
   <arg name="semantic_enabled" default="true"/>
   <arg name="semantic_model" default="/tmp/openloong-semantic-model-not-configured.onnx"/>
+  <arg name="semantic_sync_slop" default="0.08"/>
+  <arg name="semantic_max_sync_delta" default="0.08"/>
   <arg name="auto_drive" default="true"/>
   <arg name="rviz" default="true"/>
 
@@ -50,6 +52,12 @@
       <param name="voxel_size" value="0.10"/>
       <param name="max_voxels" value="200000"/>
       <param name="map_publish_period" value="2.0"/>
+      <param name="sync_queue_size" value="20"/>
+      <param name="sync_slop" value="$(arg semantic_sync_slop)"/>
+      <param name="max_sync_delta" value="$(arg semantic_max_sync_delta)"/>
+      <param name="tf_timeout" value="0.20"/>
+      <param name="camera_frame_convention" value="auto"/>
+      <param name="min_camera_depth" value="0.10"/>
     </node>
   </group>
 
