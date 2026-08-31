@@ -1,0 +1,72 @@
+[workspace]
+name = "openloong-topic2-semantic-slam"
+version = "0.1.0"
+description = "OpenLoong topic 2 semantic SLAM development environment"
+authors = ["OpenLoong Topic 2 Team"]
+channels = ["https://prefix.dev/robostack-jazzy", "conda-forge"]
+channel-priority = "strict"
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.12.*"
+numpy = ">=2.0,<3"
+scipy = ">=1.14,<2"
+pyyaml = ">=6,<7"
+pytest = ">=8,<9"
+cmake = ">=3.28,<4"
+ninja = ">=1.12,<2"
+pkg-config = ">=0.29,<1"
+cxx-compiler = ">=1.7,<2"
+colcon-common-extensions = ">=0.3,<0.4"
+ros-jazzy-desktop = ">=0.11,<0.12"
+ros-jazzy-pcl-ros = ">=2.6,<2.7"
+ros-jazzy-rosbag2-storage-mcap = ">=0.26,<0.27"
+
+[pypi-dependencies]
+rosbags = "==0.11.5"
+
+[feature.semantic-gpu]
+channels = ["conda-forge"]
+
+[feature.semantic-gpu.dependencies]
+python = "3.12.*"
+numpy = ">=2.0,<3"
+scipy = ">=1.14,<2"
+pyyaml = ">=6,<7"
+pytest = ">=8,<9"
+cuda-version = "12.9.*"
+pytorch-gpu = { version = "2.9.*", channel = "conda-forge" }
+
+[feature.semantic-gpu.pypi-dependencies]
+rosbags = "==0.11.5"
+
+[feature.semantic-gpu.system-requirements]
+cuda = "12.9"
+
+[environments]
+semantic-gpu = { features = ["semantic-gpu"], no-default-feature = true }
+
+[tasks]
+prepare = { cmd = "python scripts/setup_project.py", description = "创建本地数据和输出目录" }
+check = { cmd = "python scripts/check_environment.py", description = "检查 ROS 2 Jazzy、构建工具和 Python 依赖" }
+setup = { depends-on = ["prepare", "check"], description = "初始化并检查项目" }
+test = { cmd = "python -m pytest -q", description = "运行自动化测试" }
+fetch-lio = { cmd = "python scripts/fetch_fast_lio.py", description = "按固定提交获取 ROS 2 FAST-LIO2" }
+build = { depends-on = ["fetch-lio"], cmd = "colcon build --symlink-install --event-handlers console_direct+ --cmake-args -DCMAKE_BUILD_TYPE=Release", description = "构建 ROS 2 工作区" }
+audit-bag = { cmd = "python scripts/audit_bag.py data/data.bag --samples 50 --sha256 --output data/intermediate/bag-audit.json", description = "审计默认位置的完整 bag" }
+rtk-enu = { cmd = "python scripts/export_rtk_enu.py data/data.bag data/intermediate/rtk_enu.csv --metadata data/intermediate/rtk_enu.json", description = "将默认 bag 的 RTK 轨迹转换为本地 ENU" }
+convert-bag = { cmd = "python scripts/convert_bag_ros2.py data/data.bag data/intermediate/data_ros2 --metadata data/intermediate/data_ros2_conversion.json", description = "将 ROS1 数据转换并校验为 ROS2 MCAP" }
+baseline = { cmd = "bash -c 'source install/setup.bash && python scripts/run_fast_lio.py data/intermediate/data_ros2 data/outputs/full_run --rate 2 --record-clouds'", description = "运行完整 FAST-LIO2 基线" }
+fuse = { cmd = "python scripts/fuse_trajectory.py data/outputs/full_run/slam_topics data/intermediate/rtk_enu.csv data/intermediate/rtk_enu.json data/outputs/fused", description = "融合 LIO 与 RTK 并导出 path.yaml" }
+rebuild-map = { cmd = "python scripts/rebuild_rtk_map.py data/outputs/full_run/slam_topics data/outputs/fused/trajectory_fused.csv data/outputs/fused/trajectory_metrics.json data/outputs/final/map_geometry_enu.pcd --metadata data/outputs/final/map_geometry_enu.json", description = "逐帧校正并重建 ENU 地图" }
+semantic-fallback = { cmd = "python scripts/create_semantic_map.py data/outputs/final/map_geometry_enu.pcd data/outputs/final/map_semantic_geometry.pcd --metadata data/outputs/final/semantic_geometry_metrics.json", description = "仅在模型不可用时生成几何语义兜底" }
+fetch-semantic-model = { cmd = "python scripts/fetch_semantic_model.py", description = "下载并校验 4.9 MiB RandLA-Net 权重" }
+validate-output = { cmd = "python scripts/validate_pcd.py data/outputs/final/map_geometry_enu.pcd --output data/outputs/final/map_validation.json && python scripts/validate_pcd.py data/outputs/final/map_semantic.pcd --require-field label --require-field confidence --require-field rgb --output data/outputs/final/semantic_validation.json && python scripts/validate_path.py data/outputs/fused/path.yaml --output data/outputs/final/path_validation.json", description = "校验最终 PCD 和轨迹" }
+retime-video = { cmd = "python scripts/retime_slam_bag.py data/outputs/full_run/slam_topics data/outputs/final/rviz_replay --metadata data/outputs/final/rviz_replay.json", description = "按 Header 时间重建 RViz 回放 bag" }
+record-video = { cmd = "python scripts/record_rviz_video.py data/outputs/final/rviz_replay data/outputs/final/rviz_accelerated_follow.webm --rate 6", description = "录制不超过两分钟且跟随机体的 RViz 视频" }
+validate-video = { cmd = "python scripts/validate_video.py data/outputs/final/rviz_accelerated_follow.webm --output data/outputs/final/video_validation.json", description = "校验最终视频流和两分钟时长门禁" }
+
+[feature.semantic-gpu.tasks]
+semantic-test = { cmd = "python -m pytest -q", description = "运行含模型权重兼容性的全部测试" }
+fetch-semantic-model = { cmd = "python scripts/fetch_semantic_model.py", description = "下载并校验 4.9 MiB RandLA-Net 权重" }
+semantic = { depends-on = ["fetch-semantic-model"], cmd = "python scripts/create_model_semantic_map.py data/outputs/full_run/slam_topics data/outputs/fused/trajectory_fused.csv data/outputs/fused/trajectory_metrics.json data/outputs/final/map_geometry_enu.pcd data/outputs/final/map_semantic.pcd --metadata data/outputs/final/semantic_metrics.json", description = "逐帧 RandLA-Net 推理并融合 ENU 语义地图" }

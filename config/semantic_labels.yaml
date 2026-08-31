@@ -1,0 +1,30 @@
+version: 2
+status: model_defined_semantickitti
+model: RandLA-Net SemanticKITTI pretrained checkpoint from Open3D-ML
+model_output_note: 模型的 0..18 输出在本文件中映射为 1..19；0 留作低置信度 unknown。
+labels:
+  - {id: 0, name: unknown, color_rgb: [128, 128, 128], dynamic: unknown}
+  - {id: 1, name: car, color_rgb: [100, 150, 245], dynamic: candidate}
+  - {id: 2, name: bicycle, color_rgb: [100, 230, 245], dynamic: candidate}
+  - {id: 3, name: motorcycle, color_rgb: [30, 60, 150], dynamic: candidate}
+  - {id: 4, name: truck, color_rgb: [80, 30, 180], dynamic: candidate}
+  - {id: 5, name: other_vehicle, color_rgb: [0, 0, 255], dynamic: candidate}
+  - {id: 6, name: person, color_rgb: [255, 30, 30], dynamic: candidate}
+  - {id: 7, name: bicyclist, color_rgb: [255, 40, 200], dynamic: candidate}
+  - {id: 8, name: motorcyclist, color_rgb: [150, 30, 90], dynamic: candidate}
+  - {id: 9, name: road, color_rgb: [255, 0, 255], dynamic: false}
+  - {id: 10, name: parking, color_rgb: [255, 150, 255], dynamic: false}
+  - {id: 11, name: sidewalk, color_rgb: [75, 0, 75], dynamic: false}
+  - {id: 12, name: other_ground, color_rgb: [175, 0, 75], dynamic: false}
+  - {id: 13, name: building, color_rgb: [255, 200, 0], dynamic: false}
+  - {id: 14, name: fence, color_rgb: [255, 120, 50], dynamic: false}
+  - {id: 15, name: vegetation, color_rgb: [0, 175, 0], dynamic: false}
+  - {id: 16, name: trunk, color_rgb: [135, 60, 0], dynamic: false}
+  - {id: 17, name: terrain, color_rgb: [150, 240, 80], dynamic: false}
+  - {id: 18, name: pole, color_rgb: [255, 240, 150], dynamic: false}
+  - {id: 19, name: traffic_sign, color_rgb: [255, 0, 0], dynamic: false}
+notes:
+  - 类别由轻量模型自身能力定义，符合组委会“不提供固定类别列表”的答复。
+  - 标签名称沿用 SemanticKITTI 的 19 个学习类别；跨域到 Livox 场景的置信度会在多帧融合后披露。
+  - 颜色由 SemanticKITTI 官方 BGR 色表转换为 PCD 使用的 RGB。
+  - 单帧类别不能判断目标是否正在运动，因此车辆和人员仅标为动态候选，不直接从地图删除。

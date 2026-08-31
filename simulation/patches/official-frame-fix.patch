@@ -1,0 +1,151 @@
+--- velodyne_simulator/velodyne_gazebo_plugins/src/GazeboRosVelodyneLaser.cpp
++++ velodyne_simulator/velodyne_gazebo_plugins/src/GazeboRosVelodyneLaser.cpp
+@@ -85,11 +85,15 @@
+   laser_queue_.clear();
+   laser_queue_.disable();
+   if (nh_) {
+     nh_->shutdown();
++  }
++  if (callback_laser_queue_thread_.joinable()) {
++    callback_laser_queue_thread_.join();
++  }
++  if (nh_) {
+     delete nh_;
+     nh_ = NULL;
+   }
+-  callback_laser_queue_thread_.join();
+ }
+
+ ////////////////////////////////////////////////////////////////////////////////
+--- vehicle_simulator/src/vehicleSimulator.cpp
++++ vehicle_simulator/src/vehicleSimulator.cpp
+@@ -153,19 +153,12 @@
+   int scanDataSize = scanData->points.size();
++  tf::Quaternion sensorQuat;
++  sensorQuat.setRPY(vehicleRecRoll, vehicleRecPitch, vehicleRecYaw);
++  tf::Transform odomFromSensor(sensorQuat, tf::Vector3(vehicleRecX, vehicleRecY, vehicleRecZ));
+   for (int i = 0; i < scanDataSize; i++)
+   {
+-    float pointX1 = scanData->points[i].x;
+-    float pointY1 = scanData->points[i].y * cosTerrainRecRoll - scanData->points[i].z * sinTerrainRecRoll;
+-    float pointZ1 = scanData->points[i].y * sinTerrainRecRoll + scanData->points[i].z * cosTerrainRecRoll;
+-
+-    float pointX2 = pointX1 * cosTerrainRecPitch + pointZ1 * sinTerrainRecPitch;
+-    float pointY2 = pointY1;
+-    float pointZ2 = -pointX1 * sinTerrainRecPitch + pointZ1 * cosTerrainRecPitch;
+-
+-    float pointX3 = pointX2 + vehicleRecX;
+-    float pointY3 = pointY2 + vehicleRecY;
+-    float pointZ3 = pointZ2 + vehicleRecZ;
+-
+-    scanData->points[i].x = pointX3;
+-    scanData->points[i].y = pointY3;
+-    scanData->points[i].z = pointZ3;
++    const tf::Vector3 pointOdom = odomFromSensor * tf::Vector3(
++        scanData->points[i].x, scanData->points[i].y, scanData->points[i].z);
++    scanData->points[i].x = pointOdom.x();
++    scanData->points[i].y = pointOdom.y();
++    scanData->points[i].z = pointOdom.z();
+   }
+@@ -173,6 +166,6 @@
+   sensor_msgs::PointCloud2 scanData2;
+   pcl::toROSMsg(*scanData, scanData2);
+   scanData2.header.stamp = ros::Time().fromSec(odomRecTime);
+-  scanData2.header.frame_id = "map";
++  scanData2.header.frame_id = "odom";
+   pubScanPointer->publish(scanData2);
+ }
+@@ -336,12 +329,12 @@
+   ros::Publisher pubVehicleOdom = nh.advertise<nav_msgs::Odometry>("/state_estimation", 5);
+
+   nav_msgs::Odometry odomData;
+-  odomData.header.frame_id = "map";
++  odomData.header.frame_id = "odom";
+   odomData.child_frame_id = "sensor";
+
+   tf::TransformBroadcaster tfBroadcaster;
+   tf::StampedTransform odomTrans;
+-  odomTrans.frame_id_ = "map";
++  odomTrans.frame_id_ = "odom";
+   odomTrans.child_frame_id_ = "sensor";
+
+   ros::Publisher pubModelState = nh.advertise<gazebo_msgs::ModelState>("/gazebo/set_model_state", 5);
+@@ -432,7 +425,7 @@
+     robotState.pose.position.z = vehicleZ;
+     pubModelState.publish(robotState);
+
+-    geoQuat = tf::createQuaternionMsgFromRollPitchYaw(terrainRoll, terrainPitch, 0);
++    geoQuat = tf::createQuaternionMsgFromRollPitchYaw(vehicleRoll, vehiclePitch, vehicleYaw);
+
+     lidarState.pose.orientation = geoQuat;
+     lidarState.pose.position.x = vehicleX;
+--- vehicle_simulator/launch/vehicle_simulator.launch
++++ vehicle_simulator/launch/vehicle_simulator.launch
+@@ -24,6 +24,7 @@
+   <arg name="maxIncl" default="30.0"/>
+
+   <arg name="paused" default="false"/>
++  <arg name="use_gazebo_time" default="true"/>
+   <arg name="use_sim_time" default="true"/>
+   <arg name="gui" default="false"/>
+   <arg name="headless" default="false"/>
+@@ -58,7 +59,7 @@
+   <!-- Start only after spawn_robot finishes; avoids "model does not exist" spam -->
+   <node pkg="vehicle_simulator" type="vehicleSimulator" name="vehicleSimulator" output="screen" required="true"
+         launch-prefix="$(find vehicle_simulator)/scripts/wait_for_gazebo_models.sh">
+-    <param name="use_gazebo_time" type="bool" value="false" />
++    <param name="use_gazebo_time" type="bool" value="$(arg use_gazebo_time)" />
+     <param name="sensorOffsetX" value="$(arg sensorOffsetX)" />
+     <param name="sensorOffsetY" value="$(arg sensorOffsetY)" />
+     <param name="vehicleHeight" value="$(arg vehicleHeight)" />
+--- vehicle_simulator/urdf/lidar.urdf.xacro
++++ vehicle_simulator/urdf/lidar.urdf.xacro
+@@ -3,7 +3,7 @@
+   <link name="lidar" />
+
+   <xacro:include filename="$(find velodyne_description)/urdf/VLP-16.urdf.xacro"/>
+-  <xacro:VLP-16 parent="lidar" name="velodyne" topic="/velodyne_points" hz="5" samples="350" min_range="0.1" organize_cloud="true">
++  <xacro:VLP-16 parent="lidar" name="velodyne" topic="/velodyne_points" hz="5" samples="350" min_range="0.1" organize_cloud="true" gpu="true">
+     <origin xyz="0 0 0" rpy="0 0 0" />
+   </xacro:VLP-16>
+
+--- vehicle_simulator/world/house.world
++++ vehicle_simulator/world/house.world
+@@ -69,9 +69,9 @@
+     <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+     <atmosphere type='adiabatic'/>
+     <physics type='ode'>
+-      <max_step_size>0.001</max_step_size>
++      <max_step_size>0.0025</max_step_size>
+       <real_time_factor>1</real_time_factor>
+-      <real_time_update_rate>1000</real_time_update_rate>
++      <real_time_update_rate>400</real_time_update_rate>
+     </physics>
+     <scene>
+       <ambient>0.4 0.4 0.4 1</ambient>
+@@ -2594,9 +2594,9 @@
+         <collision name='base_laser_front_link_geom'>
+           <pose>0 0 0 0 -0 0</pose>
+           <geometry>
+-            <mesh>
+-              <uri>model://hokuyo/meshes/hokuyo_convex.stl</uri>
+-            </mesh>
++            <box>
++              <size>0.08 0.08 0.06</size>
++            </box>
+           </geometry>
+           <surface>
+             <bounce>
+@@ -2626,9 +2626,9 @@
+         <visual name='base_laser_front_link_geom_visual'>
+           <pose>0 0 0 0 -0 0</pose>
+           <geometry>
+-            <mesh>
+-              <uri>model://hokuyo/meshes/hokuyo.dae</uri>
+-            </mesh>
++            <box>
++              <size>0.08 0.08 0.06</size>
++            </box>
+           </geometry>
+         </visual>
+         <sensor name='base_laser_front' type='ray'>

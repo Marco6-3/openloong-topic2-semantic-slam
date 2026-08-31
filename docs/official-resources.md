@@ -98,3 +98,14 @@
 - RViz 配置随车辆模型包提供。
 
 仿真环境包含家具、小物件和行人，可用于复赛阶段的语义关联、动态物体过滤和导航测试。
+
+2026-08-29 重新下载并校验的资源指纹：
+
+| 资源 | 大小 | Last-Modified | SHA-256 |
+|---|---:|---|---|
+| `src.zip` | 315,398 bytes | 2026-07-23 | `0b518cf584967c664aa45554c6031fff3c9074ed479cecc74d1aebe8a6cc9d99` |
+| `gazebo_models.zip` | 47,887,303 bytes | 2026-08-11 | `676f2c0034e31a7dc1024086b56c9bd71690c46c68448a39c0af18df54fdabe0` |
+
+两个 ZIP 均通过完整性检查和路径穿越检查。准备脚本保留下载归档不变，仅在被 Git 忽略的 catkin 工作区副本应用补丁。
+
+源码核实还发现官方包不能直接作为 SLAM 坐标链使用：车辆节点发布 `map→sensor`，VLP-16 模型不会随车辆偏航，`house.world` 引用了模型 ZIP 中不存在的 `hokuyo` 网格，顶层 `src/CMakeLists.txt` 为空，且自定义 VLP-16 插件目录没有自动进入 Gazebo 搜索路径。这些不是赛事算法要求，而是仿真集成问题；具体隔离修正见[复赛仿真实时语义 SLAM 架构](simulation-architecture.md)。

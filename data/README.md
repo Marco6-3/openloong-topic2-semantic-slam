@@ -24,6 +24,15 @@ sha256: 35ec4e14c13aeceb238f0ac1edd171a255d7615b1a1bc6204f79679b29156ae2
 
 没有 ROS1 环境时，可按 [`docs/bag-audit.md`](../docs/bag-audit.md) 使用仓库内的跨平台只读审计和截取脚本。
 
+项目默认 Pixi 任务读取 `data/data.bag`：
+
+```bash
+pixi run audit-bag
+pixi run rtk-enu
+```
+
+也可以将文件放在 `data/raw/data.bag`，再直接给相应脚本传入该路径。
+
 将以下信息写入 `docs/bag-audit.md`：
 
 - SHA-256；

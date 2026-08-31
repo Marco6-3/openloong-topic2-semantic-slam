@@ -1,5 +1,7 @@
 # 技术路线
 
+> 2026-08-29 更新：主链路先经过真实 60 秒数据验证，随后完成 652 秒全量候选运行。实现边界、组件接口、否决方案和量化结果以 [已验证的初赛架构](architecture.md) 与 [全量候选结果](../results/final-run.md) 为准。本页保留算法取舍背景。
+
 ## 总体原则
 
 先保证几何地图和轨迹完整，再增加语义。初赛公开数据说明未列出相机，因此在审计原始 bag 前，不把 RGB 语义 SLAM 设为初赛依赖。
@@ -22,14 +24,14 @@ PCD、轨迹YAML、语义说明、RViz与性能日志
 
 ## 建图基线
 
-优先评估 FAST-LIO2，原因是其面向高效 LiDAR–IMU 里程计，并提供 Livox 数据路径和 PCD 累积保存能力。官方仓库：<https://github.com/hku-mars/FAST_LIO>。
+采用固定版本的 ROS2 FAST-LIO2 移植版，原因是其面向高效 LiDAR–IMU 里程计，并提供 Livox 数据路径和 PCD/里程计输出能力。上游算法仓库：<https://github.com/hku-mars/FAST_LIO>；项目实际锁定的 ROS2 移植：<https://github.com/Ericsii/FAST_LIO_ROS2>。
 
-是否适用必须由 bag 审计决定：
+适用性已经由 bag 审计和 60 秒端到端运行确认：
 
-- 若 `/livox/lidar` 含可靠的每点时间戳，可直接适配；
-- 若为普通 PointCloud2，需要核实字段中是否仍有 `time`/`timestamp`；
-- 若完全缺失点时间戳，必须记录运动畸变风险，并评估转换或替代方案；
-- 若外参已知，优先固定外参，不让在线外参估计引入不稳定性。
+- `/livox/lidar` 是 Livox CustomMsg，`offset_time` 为纳秒；
+- ROS1 bag 先转换为 ROS2 MCAP，转换后执行逐话题计数门禁；
+- bag 无外参，采用 MID360 公共初值并在线细化，不能表述为官方标定值；
+- 3× 播放实测丢帧，默认 2× 并执行输出完整性门禁。
 
 LIO-SAM 作为全局图优化、GPS和回环方案的参考实现，不默认作为MID360第一基线。官方仓库：<https://github.com/TixiaoShan/LIO-SAM>。
 
@@ -59,9 +61,9 @@ LIO-SAM 作为全局图优化、GPS和回环方案的参考实现，不默认作
 5. 低置信结果标记为 `unknown`；
 6. 人和车辆等动态类别进入动态层，不直接固化到静态地图。
 
-可评估 MMDetection3D 中的3D语义分割实现：<https://github.com/open-mmlab/mmdetection3d>。预训练模型与比赛场景可能存在域差异，必须通过可视化和小规模人工抽查验证。
+实测采用 RandLA-Net 的 SemanticKITTI 预训练权重。它直接处理点、模型仅 124 万参数，避免了旋转式雷达 range image 对 Livox 非重复扫描模式的额外假设。每次推理前把近期配准点变换回当前机体坐标，6 cm 去重并采样 45,056 点；推理概率随后按每个来源帧的 RTK 校正投影到 ENU 地图并跨滑窗融合。
 
-在官方未指定类别前，可以仅用于内部实验的候选类别包括：地面/道路、建筑/墙、植被、车辆、行人、杆状结构、其他、未知。最终类别必须以组委会答复为准。
+组委会已答复不会提供固定类别列表，因此标签沿用模型自身的 SemanticKITTI 19 个学习类别，并增加低置信 `unknown`。这不是官方类别，也不声称 SemanticKITTI 到 Livox 场景的跨域精度等同训练集；最终结果披露覆盖率、置信度、权重大小和运行时。
 
 ### 复赛有RGB时
 

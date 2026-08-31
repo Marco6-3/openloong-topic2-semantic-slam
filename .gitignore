@@ -8,6 +8,7 @@
 *.mp4
 *.avi
 *.mkv
+*.webm
 *.zip
 *.7z
 *.tar
@@ -21,7 +22,10 @@ data/raw/
 data/samples/
 data/intermediate/
 data/outputs/
+data/simulation/
+/simulation/data/
 results/artifacts/
+src/fast_lio/
 
 # ROS/catkin
 build/
@@ -38,6 +42,8 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
+.pixi/
+.direnv/
 
 # 编辑器与系统
 .vscode/

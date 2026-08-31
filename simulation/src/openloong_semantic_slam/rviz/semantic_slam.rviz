@@ -1,0 +1,190 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /SLAM Map1
+        - /3D Geometry Map1
+        - /Semantic Map1
+        - /Semantic Camera1
+      Splitter Ratio: 0.58
+    Tree Height: 740
+  - Class: rviz/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.45
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 90; 90; 90
+      Enabled: true
+      Name: Ground Grid
+      Plane: XY
+      Plane Cell Count: 60
+      Reference Frame: map
+    - Alpha: 0.72
+      Class: rviz/Map
+      Color Scheme: map
+      Draw Behind: true
+      Enabled: true
+      Name: SLAM Map
+      Topic: /map
+      Unreliable: false
+      Use Timestamp: false
+    - Alpha: 0.35
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 1
+        Min Value: 0
+        Value: true
+      Axis: Z
+      Channel Name: rgb
+      Class: rviz/PointCloud2
+      Color: 150; 150; 150
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Name: 3D Geometry Map
+      Position Transformer: XYZ
+      Queue Size: 3
+      Selectable: true
+      Size (Pixels): 2
+      Size (m): 0.04
+      Style: Points
+      Topic: /semantic/geometry_map
+      Unreliable: false
+      Use Fixed Frame: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 1
+        Min Value: 0
+        Value: true
+      Axis: Z
+      Channel Name: rgb
+      Class: rviz/PointCloud2
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Name: Semantic Map
+      Position Transformer: XYZ
+      Queue Size: 3
+      Selectable: true
+      Size (Pixels): 5
+      Size (m): 0.06
+      Style: Points
+      Topic: /semantic/map
+      Unreliable: false
+      Use Fixed Frame: true
+    - Alpha: 0.85
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 1
+        Min Value: 0
+        Value: true
+      Axis: Z
+      Channel Name: rgb
+      Class: rviz/PointCloud2
+      Color Transformer: RGB8
+      Decay Time: 0.5
+      Enabled: true
+      Name: Current Semantic Cloud
+      Position Transformer: XYZ
+      Queue Size: 2
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.05
+      Style: Points
+      Topic: /semantic/cloud
+      Unreliable: false
+      Use Fixed Frame: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 0; 255; 70
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.05
+      Name: SLAM Trajectory
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.08
+      Pose Color: 255; 85; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic: /slam_path
+      Unreliable: false
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /semantic/markers
+      Name: 3D Semantic Labels
+      Namespaces:
+        semantic_labels: true
+      Queue Size: 20
+    - Class: rviz/Image
+      Enabled: true
+      Image Topic: /semantic/image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Semantic Camera
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+    - Class: rviz/Axes
+      Enabled: true
+      Length: 0.7
+      Name: Vehicle Pose
+      Radius: 0.08
+      Reference Frame: sensor
+      Show Trail: false
+  Enabled: true
+  Global Options:
+    Background Color: 20; 24; 30
+    Default Light: true
+    Fixed Frame: map
+    Frame Rate: 20
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+  Value: true
+  Views:
+    Current:
+      Angle: -1.57
+      Class: rviz/Orbit
+      Distance: 16
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Field of View: 0.785
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
+      Invert Z Axis: false
+      Near Clip Distance: 0.01
+      Pitch: 1.15
+      Target Frame: sensor
+      Yaw: 2.35
+    Saved: ~
+Window Geometry:
+  Height: 980
+  Width: 1600
+  X: 120
+  Y: 60
