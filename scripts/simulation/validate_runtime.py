@@ -10,6 +10,7 @@ from pathlib import Path
 
 import rospy
 import tf2_ros
+from gazebo_msgs.msg import ModelStates
 from nav_msgs.msg import OccupancyGrid, Odometry, Path as RosPath
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Image, LaserScan, PointCloud2
@@ -27,6 +28,9 @@ class RuntimeValidator:
         self.latest_map = None
         self.latest_path_poses = 0
         self.semantic_statuses = []
+        self.ground_truth_objects = {}
+        self.target_position_errors = []
+        self.target_position_errors_by_class = {}
         self.clock_first = None
         self.clock_last = None
         self.clock_wall_first = None
@@ -56,6 +60,8 @@ class RuntimeValidator:
         rospy.Subscriber("/map", OccupancyGrid, self.observe_map, queue_size=2)
         rospy.Subscriber("/slam_path", RosPath, self.observe_path, queue_size=2)
         rospy.Subscriber("/semantic/status", String, self.observe_semantic, queue_size=10)
+        rospy.Subscriber("/gazebo/model_states", ModelStates, self.observe_ground_truth, queue_size=2)
+        rospy.Subscriber("/semantic/markers", MarkerArray, self.observe_markers, queue_size=10)
         rospy.Subscriber("/clock", Clock, self.observe_clock, queue_size=100)
 
     @staticmethod
@@ -108,6 +114,87 @@ class RuntimeValidator:
         self.clock_last = stamp
         self.clock_wall_last = now
 
+    @staticmethod
+    def ground_truth_class(model_name: str) -> str | None:
+        name = model_name.lower()
+        if "person" in name or "citizen" in name:
+            return "person"
+        if "refrigerator" in name:
+            return "refrigerator"
+        if "cocacola" in name:
+            return "bottle"
+        if "bed" in name:
+            return "bed"
+        if "chair" in name:
+            return "chair"
+        if "sofa" in name:
+            return "couch"
+        if "tv_01" in name:
+            return "tv"
+        if "vase" in name:
+            return "vase"
+        if "table" in name:
+            return "dining table"
+        return None
+
+    def observe_ground_truth(self, message: ModelStates) -> None:
+        objects = {}
+        for name, pose in zip(message.name, message.pose):
+            class_name = self.ground_truth_class(name)
+            if class_name is not None:
+                objects.setdefault(class_name, []).append(
+                    (pose.position.x, pose.position.y, pose.position.z)
+                )
+        self.ground_truth_objects = objects
+
+    @staticmethod
+    def marker_class(text: str) -> str | None:
+        for name in (
+            "dining table",
+            "refrigerator",
+            "bottle",
+            "person",
+            "chair",
+            "couch",
+            "bed",
+            "tv",
+            "vase",
+        ):
+            if text.startswith(name + " "):
+                return name
+        return None
+
+    def observe_markers(self, message: MarkerArray) -> None:
+        if not self.ground_truth_objects:
+            return
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                "odom", "map", rospy.Time(0), rospy.Duration(0.05)
+            )
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            return
+        q = transform.transform.rotation
+        norm = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w
+        if norm < 1e-12:
+            return
+        scale = 2.0 / norm
+        rotation = (
+            (1.0 - scale * (q.y * q.y + q.z * q.z), scale * (q.x * q.y - q.z * q.w)),
+            (scale * (q.x * q.y + q.z * q.w), 1.0 - scale * (q.x * q.x + q.z * q.z)),
+        )
+        translation = transform.transform.translation
+        for marker in message.markers:
+            class_name = self.marker_class(marker.text)
+            targets = self.ground_truth_objects.get(class_name or "", [])
+            if not targets:
+                continue
+            x_map, y_map = marker.pose.position.x, marker.pose.position.y
+            x_odom = rotation[0][0] * x_map + rotation[0][1] * y_map + translation.x
+            y_odom = rotation[1][0] * x_map + rotation[1][1] * y_map + translation.y
+            error = min(math.hypot(x_odom - x, y_odom - y) for x, y, _z in targets)
+            self.target_position_errors.append(error)
+            self.target_position_errors_by_class.setdefault(class_name, []).append(error)
+
     def frame_exists(self, target: str, source: str) -> bool:
         try:
             self.tf_buffer.lookup_transform(target, source, rospy.Time(0), rospy.Duration(0.5))
@@ -136,6 +223,29 @@ class RuntimeValidator:
         candidate_voxels = int(final_semantic.get("semantic_candidate_voxels", stable_voxels))
         transient_voxels = int(final_semantic.get("semantic_transient_voxels", 0))
         detected = sorted({name for item in self.semantic_statuses for name in item.get("detections", [])})
+        policy_rejected = sum(
+            int(item.get("policy_rejected", 0)) for item in self.semantic_statuses
+        )
+        policy_rejected_classes = sorted(
+            {
+                name
+                for item in self.semantic_statuses
+                for name in item.get("policy_rejected_classes", [])
+            }
+        )
+        association_totals = {
+            key: sum(
+                int(item.get("association", {}).get(key, 0))
+                for item in self.semantic_statuses
+            )
+            for key in (
+                "raw_mask_matches",
+                "boundary_rejected",
+                "depth_rejected",
+                "low_confidence_rejected",
+                "associated",
+            )
+        }
         tf_checks = {
             "map_to_odom": self.frame_exists("map", "odom"),
             "odom_to_sensor": self.frame_exists("odom", "sensor"),
@@ -155,6 +265,35 @@ class RuntimeValidator:
             "slam_map": self.latest_map,
             "semantic_frames": len(self.semantic_statuses),
             "semantic_classes_seen": detected,
+            "semantic_policy": {
+                "rejected_candidates": policy_rejected,
+                "rejected_classes": policy_rejected_classes,
+            },
+            "association_totals": association_totals,
+            "target_position_xy_error_m": {
+                "samples": len(self.target_position_errors),
+                "median": round(statistics.median(self.target_position_errors), 3)
+                if self.target_position_errors
+                else None,
+                "p95": round(
+                    sorted(self.target_position_errors)[
+                        int(0.95 * (len(self.target_position_errors) - 1))
+                    ],
+                    3,
+                )
+                if self.target_position_errors
+                else None,
+                "by_class": {
+                    name: {
+                        "samples": len(errors),
+                        "median": round(statistics.median(errors), 3),
+                        "p95": round(
+                            sorted(errors)[int(0.95 * (len(errors) - 1))], 3
+                        ),
+                    }
+                    for name, errors in sorted(self.target_position_errors_by_class.items())
+                },
+            },
             "inference_ms_median": round(statistics.median(inference), 2) if inference else None,
             "inference_ms_p95": round(sorted(inference)[int(0.95 * (len(inference) - 1))], 2) if inference else None,
             "pipeline_ms_p95": round(sorted(pipeline)[int(0.95 * (len(pipeline) - 1))], 2) if pipeline else None,
@@ -199,6 +338,11 @@ class RuntimeValidator:
             failures.append(f"semantic pipeline p95 {report['pipeline_ms_p95']:.1f} ms > 400 ms")
         if image_delta and report["image_delta_ms_p95"] > 120.0:
             failures.append(f"camera-lidar timestamp delta p95 {report['image_delta_ms_p95']:.1f} ms > 120 ms")
+        target_error = report["target_position_xy_error_m"]
+        if target_error["samples"] >= 20 and target_error["p95"] > 1.0:
+            failures.append(
+                f"semantic target position p95 {target_error['p95']:.2f} m > 1.00 m"
+            )
         for name, connected in tf_checks.items():
             if not connected:
                 failures.append(f"TF check failed: {name}")

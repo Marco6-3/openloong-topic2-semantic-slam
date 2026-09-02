@@ -9,6 +9,7 @@ catkin_install_python(PROGRAMS
   nodes/slam_path_node.py
   nodes/semantic_mapper.py
   nodes/semantic_fusion.py
+  nodes/semantic_geometry.py
   nodes/demo_driver.py
   nodes/runtime_monitor.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -51,3 +51,38 @@ def test_dynamic_labels_are_excluded_from_persistent_candidates():
     fusion = TemporalVoxelFusion(0.1, 100)
     stats = fusion.update(*frame(3), excluded_labels={3})
     assert stats["candidate_voxels"] == 0
+
+
+def test_visible_misses_remove_a_previously_stable_false_positive():
+    fusion = TemporalVoxelFusion(
+        0.1,
+        100,
+        min_observations=2,
+        negative_evidence_decay=0.5,
+        max_consecutive_misses=3,
+    )
+    positive = frame(1)
+    fusion.update(*positive, observed_mask=np.asarray([True]))
+    fusion.update(*positive, observed_mask=np.asarray([True]))
+    assert fusion.stable_count() == 1
+
+    xyz, _labels, _scores, colors = positive
+    empty_labels = np.zeros(1, dtype=np.uint16)
+    empty_scores = np.zeros(1, dtype=np.float32)
+    for _ in range(3):
+        stats = fusion.update(
+            xyz, empty_labels, empty_scores, colors, observed_mask=np.asarray([True])
+        )
+    assert stats["removed_voxels"] == 1
+    assert stats["candidate_voxels"] == 0
+    assert fusion.stable_count() == 0
+
+
+def test_voxels_outside_camera_view_are_not_treated_as_negative_evidence():
+    fusion = TemporalVoxelFusion(0.1, 100, min_observations=2)
+    positive = frame(1)
+    fusion.update(*positive, observed_mask=np.asarray([True]))
+    fusion.update(*positive, observed_mask=np.asarray([True]))
+    for _ in range(20):
+        fusion.update(*positive, observed_mask=np.asarray([False]))
+    assert fusion.stable_count() == 1

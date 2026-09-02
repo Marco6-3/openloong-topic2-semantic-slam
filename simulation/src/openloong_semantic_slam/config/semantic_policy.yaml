@@ -1,0 +1,21 @@
+# High-precision subset backed by both official semifinal assets and runtime
+# validation. Generic indoor classes that repeatedly matched the wrong object
+# (table/TV/refrigerator/vase) are intentionally excluded from recording mode.
+# Object positions are not encoded, so rearranged layouts remain supported.
+allowed_classes:
+  - person
+  - bottle
+  - chair
+  - couch
+  - bed
+
+default_confidence: 0.40
+class_confidence:
+  person: 0.34
+  chair: 0.34
+  couch: 0.40
+  bed: 0.34
+  bottle: 0.40
+
+dynamic_classes:
+  - person

@@ -18,6 +18,7 @@ class VoxelEvidence:
     scores: dict[int, float] = field(default_factory=dict)
     colors: dict[int, tuple[int, int, int]] = field(default_factory=dict)
     observations: int = 0
+    consecutive_misses: int = 0
     stable: bool = False
 
 
@@ -31,6 +32,9 @@ class TemporalVoxelFusion:
         min_observations: int = 2,
         min_consensus: float = 0.55,
         evidence_decay: float = 0.95,
+        negative_evidence_decay: float = 0.65,
+        max_consecutive_misses: int = 5,
+        minimum_winner_score: float = 0.55,
     ) -> None:
         if voxel_size <= 0.0:
             raise ValueError("voxel_size must be positive")
@@ -42,11 +46,20 @@ class TemporalVoxelFusion:
             raise ValueError("min_consensus must be within [0, 1]")
         if not 0.0 < evidence_decay <= 1.0:
             raise ValueError("evidence_decay must be within (0, 1]")
+        if not 0.0 < negative_evidence_decay <= 1.0:
+            raise ValueError("negative_evidence_decay must be within (0, 1]")
+        if max_consecutive_misses < 1:
+            raise ValueError("max_consecutive_misses must be positive")
+        if minimum_winner_score < 0.0:
+            raise ValueError("minimum_winner_score must be non-negative")
         self.voxel_size = float(voxel_size)
         self.max_voxels = int(max_voxels)
         self.min_observations = int(min_observations)
         self.min_consensus = float(min_consensus)
         self.evidence_decay = float(evidence_decay)
+        self.negative_evidence_decay = float(negative_evidence_decay)
+        self.max_consecutive_misses = int(max_consecutive_misses)
+        self.minimum_winner_score = float(minimum_winner_score)
         self.voxels: dict[tuple[int, int, int], VoxelEvidence] = {}
         self._stable_count = 0
 
@@ -57,9 +70,15 @@ class TemporalVoxelFusion:
         confidence: np.ndarray,
         colors: np.ndarray,
         excluded_labels: set[int] | None = None,
+        observed_mask: np.ndarray | None = None,
     ) -> dict[str, int]:
-        """Add a frame, collapsing duplicate point evidence inside each voxel."""
+        """Add a frame, including negative evidence for visible unlabeled voxels."""
         excluded = excluded_labels or set()
+        if observed_mask is None:
+            observed_mask = labels > 0
+        observed_mask = np.asarray(observed_mask, dtype=bool)
+        if observed_mask.shape != labels.shape:
+            raise ValueError("observed_mask must have the same shape as labels")
         frame_observations: dict[
             tuple[tuple[int, int, int], int], tuple[np.ndarray, tuple[int, int, int], float]
         ] = {}
@@ -81,6 +100,34 @@ class TemporalVoxelFusion:
                     score,
                 )
 
+        visible_voxels = {
+            tuple(int(value) for value in key_array) for key_array in keys[observed_mask]
+        }
+        positive_voxels = {key for key, _label in frame_observations}
+        removed = 0
+        negative_updates = 0
+        for key in visible_voxels:
+            evidence = self.voxels.get(key)
+            if evidence is None:
+                continue
+            for existing_label in list(evidence.scores):
+                evidence.scores[existing_label] *= self.evidence_decay
+                if key not in positive_voxels:
+                    evidence.scores[existing_label] *= self.negative_evidence_decay
+                if evidence.scores[existing_label] < 1e-4:
+                    del evidence.scores[existing_label]
+                    evidence.colors.pop(existing_label, None)
+            if key in positive_voxels:
+                evidence.consecutive_misses = 0
+            else:
+                evidence.consecutive_misses += 1
+                negative_updates += 1
+                if evidence.consecutive_misses >= self.max_consecutive_misses:
+                    if evidence.stable:
+                        self._stable_count -= 1
+                    del self.voxels[key]
+                    removed += 1
+
         observed_voxels: set[tuple[int, int, int]] = set()
         accepted = 0
         for (key, label), (position, color, score) in frame_observations.items():
@@ -91,19 +138,17 @@ class TemporalVoxelFusion:
                 evidence = VoxelEvidence(position=position)
                 self.voxels[key] = evidence
             if key not in observed_voxels:
-                for existing_label in list(evidence.scores):
-                    evidence.scores[existing_label] *= self.evidence_decay
-                    if evidence.scores[existing_label] < 1e-4:
-                        del evidence.scores[existing_label]
-                        evidence.colors.pop(existing_label, None)
                 evidence.observations += 1
+                evidence.consecutive_misses = 0
                 evidence.position = evidence.position * 0.8 + position * 0.2
                 observed_voxels.add(key)
             evidence.scores[label] = evidence.scores.get(label, 0.0) + score
             evidence.colors[label] = color
             accepted += 1
-        for key in observed_voxels:
-            evidence = self.voxels[key]
+        for key in visible_voxels | observed_voxels:
+            evidence = self.voxels.get(key)
+            if evidence is None:
+                continue
             stable = self.winner(evidence) is not None
             if stable != evidence.stable:
                 self._stable_count += 1 if stable else -1
@@ -111,6 +156,9 @@ class TemporalVoxelFusion:
         return {
             "frame_voxels": len(observed_voxels),
             "frame_label_votes": accepted,
+            "visible_voxels": len(visible_voxels),
+            "negative_updates": negative_updates,
+            "removed_voxels": removed,
             "candidate_voxels": len(self.voxels),
             "stable_voxels": self.stable_count(),
         }
@@ -119,6 +167,8 @@ class TemporalVoxelFusion:
         if evidence.observations < self.min_observations or not evidence.scores:
             return None
         label, score = max(evidence.scores.items(), key=lambda item: item[1])
+        if score < self.minimum_winner_score:
+            return None
         total = sum(evidence.scores.values())
         consensus = score / total if total > 0.0 else 0.0
         if consensus < self.min_consensus:

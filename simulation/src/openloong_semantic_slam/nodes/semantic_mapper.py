@@ -22,6 +22,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 # adjacent source module with its own generated semantic_fusion.py wrapper.
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from semantic_fusion import TemporalVoxelFusion
+from semantic_geometry import associate_semantics, transform_points
 
 
 def sigmoid(values: np.ndarray) -> np.ndarray:
@@ -48,21 +49,6 @@ def palette_color(class_id: int) -> tuple[int, int, int]:
     hsv = np.uint8([[[int(hue * 179), 210, 255]]])
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0]
     return int(bgr[2]), int(bgr[1]), int(bgr[0])
-
-
-def quaternion_matrix(x: float, y: float, z: float, w: float) -> np.ndarray:
-    norm = x * x + y * y + z * z + w * w
-    if norm < 1e-12:
-        return np.eye(3, dtype=np.float32)
-    scale = 2.0 / norm
-    return np.asarray(
-        [
-            [1.0 - scale * (y * y + z * z), scale * (x * y - z * w), scale * (x * z + y * w)],
-            [scale * (x * y + z * w), 1.0 - scale * (x * x + z * z), scale * (y * z - x * w)],
-            [scale * (x * z - y * w), scale * (y * z + x * w), 1.0 - scale * (x * x + y * y)],
-        ],
-        dtype=np.float32,
-    )
 
 
 def pack_rgb(colors: np.ndarray) -> np.ndarray:
@@ -133,17 +119,34 @@ def cloud_message(
 
 
 class YoloSegmentation:
-    def __init__(self, model_path: str, labels_path: str, input_size: int, confidence: float, iou: float) -> None:
+    def __init__(
+        self,
+        model_path: str,
+        labels_path: str,
+        policy_path: str,
+        input_size: int,
+        confidence: float,
+        iou: float,
+    ) -> None:
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"semantic model not found: {model_path}")
         with open(labels_path, "r", encoding="utf-8") as stream:
             self.names = list(yaml.safe_load(stream)["names"])
+        with open(policy_path, "r", encoding="utf-8") as stream:
+            policy = yaml.safe_load(stream)
         self.net = cv2.dnn.readNetFromONNX(model_path)
         self.input_size = input_size
-        self.confidence = confidence
+        self.allowed_classes = set(policy["allowed_classes"])
+        self.default_confidence = float(policy.get("default_confidence", confidence))
+        self.class_confidence = {
+            str(name): float(value) for name, value in policy.get("class_confidence", {}).items()
+        }
+        self.minimum_candidate_confidence = min(
+            [self.default_confidence, *self.class_confidence.values()]
+        )
         self.iou = iou
 
-    def infer(self, image: np.ndarray) -> tuple[list[dict], np.ndarray]:
+    def infer(self, image: np.ndarray) -> tuple[list[dict], np.ndarray, dict]:
         padded, scale, left, top = letterbox(image, self.input_size)
         blob = cv2.dnn.blobFromImage(padded, 1.0 / 255.0, swapRB=True, crop=False)
         self.net.setInput(blob)
@@ -155,10 +158,40 @@ class YoloSegmentation:
         class_scores = candidates[:, 4 : 4 + class_count]
         class_ids = np.argmax(class_scores, axis=1)
         scores = class_scores[np.arange(class_scores.shape[0]), class_ids]
-        keep = scores >= self.confidence
+        keep = scores >= self.minimum_candidate_confidence
         candidates, class_ids, scores = candidates[keep], class_ids[keep], scores[keep]
         if candidates.shape[0] == 0:
-            return [], image.copy()
+            return [], image.copy(), {"policy_rejected": 0, "policy_rejected_classes": []}
+
+        policy_keep = np.asarray(
+            [
+                self.names[int(class_id)] in self.allowed_classes
+                and score
+                >= self.class_confidence.get(
+                    self.names[int(class_id)], self.default_confidence
+                )
+                for class_id, score in zip(class_ids, scores)
+            ],
+            dtype=bool,
+        )
+        rejected_classes = sorted(
+            {
+                self.names[int(class_id)]
+                for class_id, accepted in zip(class_ids, policy_keep)
+                if not accepted
+            }
+        )
+        rejected_count = int(np.count_nonzero(~policy_keep))
+        candidates, class_ids, scores = (
+            candidates[policy_keep],
+            class_ids[policy_keep],
+            scores[policy_keep],
+        )
+        if candidates.shape[0] == 0:
+            return [], image.copy(), {
+                "policy_rejected": rejected_count,
+                "policy_rejected_classes": rejected_classes,
+            }
 
         boxes_center = candidates[:, :4]
         boxes_xywh = np.column_stack(
@@ -169,10 +202,25 @@ class YoloSegmentation:
                 boxes_center[:, 3],
             )
         )
-        indices = cv2.dnn.NMSBoxes(boxes_xywh.tolist(), scores.tolist(), self.confidence, self.iou)
-        if len(indices) == 0:
-            return [], image.copy()
-        indices = np.asarray(indices).reshape(-1)
+        # NMS must be class-aware: overlapping furniture of different classes
+        # should not suppress one another.
+        selected = []
+        for class_id in np.unique(class_ids):
+            class_indices = np.flatnonzero(class_ids == class_id)
+            kept = cv2.dnn.NMSBoxes(
+                boxes_xywh[class_indices].tolist(),
+                scores[class_indices].tolist(),
+                0.0,
+                self.iou,
+            )
+            if len(kept):
+                selected.extend(class_indices[np.asarray(kept).reshape(-1)].tolist())
+        indices = np.asarray(selected, dtype=np.int32)
+        if indices.size == 0:
+            return [], image.copy(), {
+                "policy_rejected": rejected_count,
+                "policy_rejected_classes": rejected_classes,
+            }
 
         proto = prototype[0]
         proto_flat = proto.reshape(proto.shape[0], -1)
@@ -217,19 +265,27 @@ class YoloSegmentation:
                     "name": self.names[class_id],
                     "score": score,
                     "mask": instance_mask,
+                    "mask_probability": mask,
                     "rgb": rgb,
                 }
             )
-        return detections, overlay
+        return detections, overlay, {
+            "policy_rejected": rejected_count,
+            "policy_rejected_classes": rejected_classes,
+        }
 
 
 class SemanticMapper:
     def __init__(self) -> None:
         model_path = str(rospy.get_param("~model_path"))
         labels_path = str(rospy.get_param("~labels_path"))
+        policy_path = str(rospy.get_param("~policy_path"))
+        with open(policy_path, "r", encoding="utf-8") as stream:
+            semantic_policy = yaml.safe_load(stream)
         self.detector = YoloSegmentation(
             model_path,
             labels_path,
+            policy_path,
             int(rospy.get_param("~input_size", 320)),
             float(rospy.get_param("~confidence", 0.25)),
             float(rospy.get_param("~iou", 0.45)),
@@ -238,20 +294,45 @@ class SemanticMapper:
         self.tf_buffer = tf2_ros.Buffer(cache_time=rospy.Duration(30.0))
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
         self.map_frame = str(rospy.get_param("~map_frame", "map"))
+        self.camera_frame = str(rospy.get_param("~camera_frame", "camera"))
         self.voxel_size = float(rospy.get_param("~voxel_size", 0.10))
-        self.max_voxels = int(rospy.get_param("~max_voxels", 200000))
+        self.geometry_max_voxels = int(rospy.get_param("~geometry_max_voxels", 750000))
+        self.map_publish_max_points = int(rospy.get_param("~map_publish_max_points", 200000))
+        self.map_publish_voxel_size = float(
+            rospy.get_param("~map_publish_voxel_size", 0.15)
+        )
+        self.semantic_max_voxels = int(rospy.get_param("~semantic_max_voxels", 250000))
         self.map_publish_period = float(rospy.get_param("~map_publish_period", 2.0))
         self.max_image_delta = float(rospy.get_param("~max_image_delta", 0.12))
-        self.dynamic_names = set(rospy.get_param("~dynamic_classes", ["person", "bicycle", "car", "motorcycle", "bus", "truck"]))
+        self.dynamic_names = set(semantic_policy.get("dynamic_classes", ["person"]))
+        self.mask_erosion_pixels = int(rospy.get_param("~mask_erosion_pixels", 1))
+        self.depth_gap_m = float(rospy.get_param("~depth_gap_m", 0.75))
+        self.depth_gap_ratio = float(rospy.get_param("~depth_gap_ratio", 0.12))
+        self.depth_min_support = int(rospy.get_param("~depth_min_support", 3))
+        self.minimum_point_confidence = float(
+            rospy.get_param("~minimum_point_confidence", 0.16)
+        )
         self.image_buffer = deque(maxlen=int(rospy.get_param("~image_buffer_size", 10)))
         self.camera_info = None
         self.geometry_voxels: dict[tuple[int, int, int], tuple[np.ndarray, tuple[int, int, int]]] = {}
+        self.geometry_publish_voxels: dict[
+            tuple[int, int, int], tuple[np.ndarray, tuple[int, int, int]]
+        ] = {}
         self.semantic_fusion = TemporalVoxelFusion(
             voxel_size=self.voxel_size,
-            max_voxels=self.max_voxels,
+            max_voxels=self.semantic_max_voxels,
             min_observations=int(rospy.get_param("~semantic_min_observations", 2)),
             min_consensus=float(rospy.get_param("~semantic_min_consensus", 0.55)),
             evidence_decay=float(rospy.get_param("~semantic_evidence_decay", 0.95)),
+            negative_evidence_decay=float(
+                rospy.get_param("~semantic_negative_decay", 0.65)
+            ),
+            max_consecutive_misses=int(
+                rospy.get_param("~semantic_max_consecutive_misses", 5)
+            ),
+            minimum_winner_score=float(
+                rospy.get_param("~semantic_minimum_winner_score", 0.55)
+            ),
         )
         self.frame_count = 0
         self.last_map_publish = rospy.Time(0)
@@ -284,8 +365,14 @@ class SemanticMapper:
             return
 
         try:
-            transform = self.tf_buffer.lookup_transform(
+            map_transform = self.tf_buffer.lookup_transform(
                 self.map_frame, message.header.frame_id, message.header.stamp, rospy.Duration(0.15)
+            )
+            camera_transform = self.tf_buffer.lookup_transform(
+                self.camera_frame,
+                message.header.frame_id,
+                message.header.stamp,
+                rospy.Duration(0.15),
             )
         except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as error:
             rospy.logwarn_throttle(2.0, "[语义SLAM] 等待map点云变换: %s", error)
@@ -302,11 +389,30 @@ class SemanticMapper:
             )
             return
         inference_started = time.perf_counter()
-        detections, overlay = self.detector.infer(image)
+        detections, overlay, inference_stats = self.detector.infer(image)
+        for detection in detections:
+            detection["dynamic"] = detection["name"] in self.dynamic_names
         inference_ms = (time.perf_counter() - inference_started) * 1000.0
-        labels, confidence, colors, instance_ids, association = self.associate(xyz, detections, image.shape)
-        xyz_map = self.transform_points(xyz, transform)
-        fusion_stats = self.fuse_voxels(xyz_map, labels, confidence, colors, detections)
+        xyz_camera = transform_points(xyz, camera_transform)
+        (
+            labels,
+            confidence,
+            colors,
+            instance_ids,
+            visible,
+            dynamic_exclusion,
+            association,
+        ) = self.associate(xyz_camera, detections, image.shape)
+        xyz_map = transform_points(xyz, map_transform)
+        fusion_stats = self.fuse_voxels(
+            xyz_map,
+            labels,
+            confidence,
+            colors,
+            detections,
+            visible,
+            dynamic_exclusion,
+        )
 
         output_header = Header(stamp=message.header.stamp, frame_id=self.map_frame)
         self.cloud_pub.publish(cloud_message(output_header, xyz_map, colors, labels, confidence))
@@ -337,11 +443,17 @@ class SemanticMapper:
             "pipeline_ms": round(elapsed_ms, 1),
             "image_delta_ms": round(image_delta * 1000.0, 1),
             "detections": detected_names,
+            "detection_scores": [round(float(item["score"]), 3) for item in detections],
+            **inference_stats,
             "associated_points": int(np.count_nonzero(labels)),
             "geometry_voxels": len(self.geometry_voxels),
+            "geometry_publish_voxels": len(self.geometry_publish_voxels),
             "semantic_voxels": fusion_stats["stable_voxels"],
             "semantic_candidate_voxels": fusion_stats["candidate_voxels"],
             "semantic_transient_voxels": fusion_stats["candidate_voxels"] - fusion_stats["stable_voxels"],
+            "semantic_negative_updates": fusion_stats["negative_updates"],
+            "semantic_removed_voxels": fusion_stats["removed_voxels"],
+            "semantic_visible_voxels": fusion_stats["visible_voxels"],
             "association": association,
         }
         self.status_pub.publish(String(data=json.dumps(status, ensure_ascii=False)))
@@ -358,44 +470,33 @@ class SemanticMapper:
             )
 
     def associate(
-        self, xyz: np.ndarray, detections: list[dict], image_shape: tuple[int, ...]
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]:
-        labels = np.zeros(xyz.shape[0], dtype=np.uint16)
-        confidence = np.zeros(xyz.shape[0], dtype=np.float32)
-        colors = np.full((xyz.shape[0], 3), 150, dtype=np.uint8)
-        instance_ids = np.full(xyz.shape[0], -1, dtype=np.int16)
-        if not detections:
-            return labels, confidence, colors, instance_ids, {"projected": 0}
-
-        fx, fy = float(self.camera_info.K[0]), float(self.camera_info.K[4])
-        cx, cy = float(self.camera_info.K[2]), float(self.camera_info.K[5])
-        forward = xyz[:, 0]
-        camera_up = xyz[:, 2] + 0.0377
-        projected = forward > 0.10
-        indices = np.nonzero(projected)[0]
-        u = np.rint(cx - fx * xyz[indices, 1] / forward[indices]).astype(np.int32)
-        v = np.rint(cy - fy * camera_up[indices] / forward[indices]).astype(np.int32)
-        height, width = image_shape[:2]
-        inside = (u >= 0) & (u < width) & (v >= 0) & (v < height)
-        point_indices = indices[inside]
-        u, v = u[inside], v[inside]
-
-        ordered = sorted(enumerate(detections), key=lambda item: item[1]["score"])
-        for detection_index, detection in ordered:
-            matched = detection["mask"][v, u]
-            matched_indices = point_indices[matched]
-            labels[matched_indices] = int(detection["class_id"]) + 1
-            confidence[matched_indices] = float(detection["score"])
-            colors[matched_indices] = np.asarray(detection["rgb"], dtype=np.uint8)
-            instance_ids[matched_indices] = detection_index
-        return labels, confidence, colors, instance_ids, {"projected": int(point_indices.size)}
-
-    def transform_points(self, xyz: np.ndarray, transform) -> np.ndarray:
-        q = transform.transform.rotation
-        rotation = quaternion_matrix(q.x, q.y, q.z, q.w)
-        t = transform.transform.translation
-        translation = np.asarray((t.x, t.y, t.z), dtype=np.float32)
-        return xyz @ rotation.T + translation
+        self, xyz_camera: np.ndarray, detections: list[dict], image_shape: tuple[int, ...]
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        dict,
+    ]:
+        intrinsics = (
+            float(self.camera_info.K[0]),
+            float(self.camera_info.K[4]),
+            float(self.camera_info.K[2]),
+            float(self.camera_info.K[5]),
+        )
+        return associate_semantics(
+            xyz_camera,
+            detections,
+            intrinsics,
+            image_shape,
+            mask_erosion_pixels=self.mask_erosion_pixels,
+            depth_gap_m=self.depth_gap_m,
+            depth_gap_ratio=self.depth_gap_ratio,
+            depth_min_support=self.depth_min_support,
+            minimum_point_confidence=self.minimum_point_confidence,
+        )
 
     def fuse_voxels(
         self,
@@ -404,6 +505,8 @@ class SemanticMapper:
         confidence: np.ndarray,
         colors: np.ndarray,
         detections: list[dict],
+        visible: np.ndarray,
+        dynamic_exclusion: np.ndarray,
     ) -> dict[str, int]:
         keys = np.floor(xyz_map / self.voxel_size).astype(np.int32)
         dynamic_labels = {
@@ -414,19 +517,42 @@ class SemanticMapper:
         for index, key_array in enumerate(keys):
             key = tuple(int(value) for value in key_array)
             label = int(labels[index])
-            if label not in dynamic_labels and len(self.geometry_voxels) < self.max_voxels:
+            if (
+                label not in dynamic_labels
+                and not dynamic_exclusion[index]
+                and len(self.geometry_voxels) < self.geometry_max_voxels
+            ):
                 self.geometry_voxels[key] = (xyz_map[index].copy(), (145, 145, 145))
+                publish_key = tuple(
+                    int(value)
+                    for value in np.floor(
+                        xyz_map[index] / self.map_publish_voxel_size
+                    ).astype(np.int32)
+                )
+                if (
+                    publish_key in self.geometry_publish_voxels
+                    or len(self.geometry_publish_voxels) < self.map_publish_max_points
+                ):
+                    self.geometry_publish_voxels[publish_key] = (
+                        xyz_map[index].copy(),
+                        (145, 145, 145),
+                    )
         # Dynamic instances stay visible in the current cloud/markers but are
         # deliberately excluded from the persistent semantic map. The fusion
         # class also collapses duplicate points so one frame contributes one
         # temporal vote per voxel/label.
         return self.semantic_fusion.update(
-            xyz_map, labels, confidence, colors, excluded_labels=dynamic_labels
+            xyz_map,
+            labels,
+            confidence,
+            colors,
+            excluded_labels=dynamic_labels,
+            observed_mask=visible,
         )
 
     def publish_maps(self, header: Header) -> None:
-        if self.geometry_voxels:
-            geometry_values = list(self.geometry_voxels.values())
+        if self.geometry_publish_voxels:
+            geometry_values = list(self.geometry_publish_voxels.values())
             xyz = np.asarray([value[0] for value in geometry_values], dtype=np.float32)
             colors = np.asarray([value[1] for value in geometry_values], dtype=np.uint8)
             self.geometry_pub.publish(cloud_message(header, xyz, colors))
