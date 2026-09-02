@@ -140,7 +140,7 @@ pixi run ros2 bag play data/outputs/final/rviz_replay \
 ./scripts/simulation/sim.sh monitor
 ```
 
-状态面板每秒显示仿真实时因子、SLAM 轨迹位姿数、地图尺寸、模型判断的类别与位置关联点、推理耗时及语义地图体素数。因此录像可同时证明 SLAM 算法在运行以及语义分析数据在实时更新。
+状态面板每秒显示仿真实时因子、SLAM 轨迹位姿数、地图尺寸、模型判断的类别与位置关联点、推理耗时及通过多帧一致性门禁的语义地图体素数。因此录像可同时证明 SLAM 算法在运行以及语义分析数据在实时更新。持久语义地图会过滤单帧瞬态误检，并拒绝相机—雷达时间差超过 120 ms 的关联。录屏候选还启用了官方场景高精度类别策略、真实 TF 投影、掩膜边界与遮挡深度过滤；最终首圈真值位置误差中位数 0.170 m、P95 0.626 m，详见[复赛仿真验收](results/simulation-validation.md)。
 
 开始录屏前把 Gazebo、RViz 和终端二平铺到同一桌面：Gazebo 用于证明官方仿真场景与车辆运动，RViz 保留 `SLAM Map`、`SLAM Trajectory`、`Semantic Map`、`3D Semantic Labels` 和 `Semantic Camera`，终端二必须露出完整的一行实时状态。Gazebo 首次打开可能占满屏幕，直接取消最大化并手动缩放即可。建议先录制 60–90 秒；结束时**先停止并保存录屏**，再依次在终端二、终端一按 `Ctrl+C`，避免把 Gazebo Classic 的退出日志录入成片。
 

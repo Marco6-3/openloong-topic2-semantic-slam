@@ -50,6 +50,10 @@ class RuntimeMonitor:
     def report(self, _event: rospy.timer.TimerEvent) -> None:
         detections = self.semantic.get("detections", [])
         names = ",".join(detections) if detections else "无"
+        stable = int(self.semantic.get("semantic_voxels", 0))
+        candidates = int(self.semantic.get("semantic_candidate_voxels", stable))
+        filtered = int(self.semantic.get("semantic_transient_voxels", 0))
+        association = self.semantic.get("association", {})
         print(
             "[复赛实时状态] "
             f"RTF={self.real_time_factor:.2f} | SLAM轨迹={self.path_poses}位姿 | 地图={self.map_size} | "
@@ -57,7 +61,11 @@ class RuntimeMonitor:
             f"总耗时={self.semantic.get('pipeline_ms', 0):.1f}ms | 类别=[{names}] "
             f"关联点={self.semantic.get('associated_points', 0)} "
             f"几何体素={self.semantic.get('geometry_voxels', 0)} "
-            f"语义体素={self.semantic.get('semantic_voxels', 0)}",
+            f"显示={self.semantic.get('geometry_publish_voxels', 0)} "
+            f"稳定/候选/过滤={stable}/{candidates}/{filtered} "
+            f"边界/遮挡拒绝={association.get('boundary_rejected', 0)}/"
+            f"{association.get('depth_rejected', 0)} "
+            f"同步差={self.semantic.get('image_delta_ms', 0):.1f}ms",
             flush=True,
         )
 

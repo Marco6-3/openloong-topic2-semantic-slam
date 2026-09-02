@@ -44,12 +44,30 @@
           name="semantic_mapper" output="screen" required="true">
       <param name="model_path" value="$(arg semantic_model)"/>
       <param name="labels_path" value="$(find openloong_semantic_slam)/config/coco80.yaml"/>
+      <param name="policy_path" value="$(find openloong_semantic_slam)/config/semantic_policy.yaml"/>
+      <param name="camera_frame" value="camera"/>
       <param name="input_size" value="320"/>
       <param name="confidence" value="0.25"/>
       <param name="iou" value="0.45"/>
       <param name="voxel_size" value="0.10"/>
-      <param name="max_voxels" value="200000"/>
+      <param name="geometry_max_voxels" value="750000"/>
+      <param name="map_publish_max_points" value="200000"/>
+      <param name="map_publish_voxel_size" value="0.15"/>
+      <param name="semantic_max_voxels" value="250000"/>
       <param name="map_publish_period" value="2.0"/>
+      <param name="max_image_delta" value="0.12"/>
+      <param name="image_buffer_size" value="10"/>
+      <param name="mask_erosion_pixels" value="1"/>
+      <param name="depth_gap_m" value="0.75"/>
+      <param name="depth_gap_ratio" value="0.12"/>
+      <param name="depth_min_support" value="3"/>
+      <param name="minimum_point_confidence" value="0.16"/>
+      <param name="semantic_min_observations" value="3"/>
+      <param name="semantic_min_consensus" value="0.65"/>
+      <param name="semantic_evidence_decay" value="0.95"/>
+      <param name="semantic_negative_decay" value="0.97"/>
+      <param name="semantic_max_consecutive_misses" value="15"/>
+      <param name="semantic_minimum_winner_score" value="0.35"/>
     </node>
   </group>
 
