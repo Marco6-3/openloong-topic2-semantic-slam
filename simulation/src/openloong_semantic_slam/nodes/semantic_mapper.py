@@ -3,7 +3,9 @@
 
 import json
 import os
+import sys
 import time
+from collections import deque
 
 import cv2
 import numpy as np
@@ -15,6 +17,11 @@ from sensor_msgs import point_cloud2
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 from std_msgs.msg import Header, String
 from visualization_msgs.msg import Marker, MarkerArray
+
+# catkin's devel-space relay lives in devel/lib and otherwise shadows the
+# adjacent source module with its own generated semantic_fusion.py wrapper.
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from semantic_fusion import TemporalVoxelFusion
 
 
 def sigmoid(values: np.ndarray) -> np.ndarray:
@@ -234,11 +241,18 @@ class SemanticMapper:
         self.voxel_size = float(rospy.get_param("~voxel_size", 0.10))
         self.max_voxels = int(rospy.get_param("~max_voxels", 200000))
         self.map_publish_period = float(rospy.get_param("~map_publish_period", 2.0))
+        self.max_image_delta = float(rospy.get_param("~max_image_delta", 0.12))
         self.dynamic_names = set(rospy.get_param("~dynamic_classes", ["person", "bicycle", "car", "motorcycle", "bus", "truck"]))
-        self.latest_image = None
+        self.image_buffer = deque(maxlen=int(rospy.get_param("~image_buffer_size", 10)))
         self.camera_info = None
         self.geometry_voxels: dict[tuple[int, int, int], tuple[np.ndarray, tuple[int, int, int]]] = {}
-        self.semantic_voxels: dict[tuple[int, int, int], tuple[np.ndarray, tuple[int, int, int], int, float]] = {}
+        self.semantic_fusion = TemporalVoxelFusion(
+            voxel_size=self.voxel_size,
+            max_voxels=self.max_voxels,
+            min_observations=int(rospy.get_param("~semantic_min_observations", 2)),
+            min_consensus=float(rospy.get_param("~semantic_min_consensus", 0.55)),
+            evidence_decay=float(rospy.get_param("~semantic_evidence_decay", 0.95)),
+        )
         self.frame_count = 0
         self.last_map_publish = rospy.Time(0)
 
@@ -253,13 +267,13 @@ class SemanticMapper:
         self.cloud_sub = rospy.Subscriber("/velodyne_points", PointCloud2, self.handle_cloud, queue_size=1, buff_size=2**22)
 
     def handle_image(self, message: Image) -> None:
-        self.latest_image = (message.header, self.bridge.imgmsg_to_cv2(message, desired_encoding="bgr8"))
+        self.image_buffer.append((message.header, self.bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")))
 
     def handle_info(self, message: CameraInfo) -> None:
         self.camera_info = message
 
     def handle_cloud(self, message: PointCloud2) -> None:
-        if self.latest_image is None or self.camera_info is None:
+        if not self.image_buffer or self.camera_info is None:
             return
         started = time.perf_counter()
         xyz = np.asarray(
@@ -277,13 +291,22 @@ class SemanticMapper:
             rospy.logwarn_throttle(2.0, "[语义SLAM] 等待map点云变换: %s", error)
             return
 
-        image_header, image = self.latest_image
+        image_header, image = min(
+            list(self.image_buffer),
+            key=lambda item: abs((item[0].stamp - message.header.stamp).to_sec()),
+        )
+        image_delta = abs((image_header.stamp - message.header.stamp).to_sec())
+        if image_delta > self.max_image_delta:
+            rospy.logwarn_throttle(
+                2.0, "[语义SLAM] 相机与雷达时间差过大: %.1f ms", image_delta * 1000.0
+            )
+            return
         inference_started = time.perf_counter()
         detections, overlay = self.detector.infer(image)
         inference_ms = (time.perf_counter() - inference_started) * 1000.0
         labels, confidence, colors, instance_ids, association = self.associate(xyz, detections, image.shape)
         xyz_map = self.transform_points(xyz, transform)
-        self.fuse_voxels(xyz_map, labels, confidence, colors, detections)
+        fusion_stats = self.fuse_voxels(xyz_map, labels, confidence, colors, detections)
 
         output_header = Header(stamp=message.header.stamp, frame_id=self.map_frame)
         self.cloud_pub.publish(cloud_message(output_header, xyz_map, colors, labels, confidence))
@@ -312,10 +335,13 @@ class SemanticMapper:
             "frame": self.frame_count,
             "inference_ms": round(inference_ms, 1),
             "pipeline_ms": round(elapsed_ms, 1),
+            "image_delta_ms": round(image_delta * 1000.0, 1),
             "detections": detected_names,
             "associated_points": int(np.count_nonzero(labels)),
             "geometry_voxels": len(self.geometry_voxels),
-            "semantic_voxels": len(self.semantic_voxels),
+            "semantic_voxels": fusion_stats["stable_voxels"],
+            "semantic_candidate_voxels": fusion_stats["candidate_voxels"],
+            "semantic_transient_voxels": fusion_stats["candidate_voxels"] - fusion_stats["stable_voxels"],
             "association": association,
         }
         self.status_pub.publish(String(data=json.dumps(status, ensure_ascii=False)))
@@ -328,7 +354,7 @@ class SemanticMapper:
                 elapsed_ms,
                 names,
                 int(np.count_nonzero(labels)),
-                len(self.semantic_voxels),
+                fusion_stats["stable_voxels"],
             )
 
     def associate(
@@ -378,7 +404,7 @@ class SemanticMapper:
         confidence: np.ndarray,
         colors: np.ndarray,
         detections: list[dict],
-    ) -> None:
+    ) -> dict[str, int]:
         keys = np.floor(xyz_map / self.voxel_size).astype(np.int32)
         dynamic_labels = {
             detection["class_id"] + 1
@@ -390,17 +416,13 @@ class SemanticMapper:
             label = int(labels[index])
             if label not in dynamic_labels and len(self.geometry_voxels) < self.max_voxels:
                 self.geometry_voxels[key] = (xyz_map[index].copy(), (145, 145, 145))
-            # Dynamic instances stay visible in the current cloud/markers but are
-            # deliberately excluded from the persistent semantic map.
-            if label > 0 and label not in dynamic_labels and len(self.semantic_voxels) < self.max_voxels:
-                previous = self.semantic_voxels.get(key)
-                if previous is None or float(confidence[index]) >= previous[3]:
-                    self.semantic_voxels[key] = (
-                        xyz_map[index].copy(),
-                        tuple(int(value) for value in colors[index]),
-                        label,
-                        float(confidence[index]),
-                    )
+        # Dynamic instances stay visible in the current cloud/markers but are
+        # deliberately excluded from the persistent semantic map. The fusion
+        # class also collapses duplicate points so one frame contributes one
+        # temporal vote per voxel/label.
+        return self.semantic_fusion.update(
+            xyz_map, labels, confidence, colors, excluded_labels=dynamic_labels
+        )
 
     def publish_maps(self, header: Header) -> None:
         if self.geometry_voxels:
@@ -408,12 +430,8 @@ class SemanticMapper:
             xyz = np.asarray([value[0] for value in geometry_values], dtype=np.float32)
             colors = np.asarray([value[1] for value in geometry_values], dtype=np.uint8)
             self.geometry_pub.publish(cloud_message(header, xyz, colors))
-        if self.semantic_voxels:
-            semantic_values = list(self.semantic_voxels.values())
-            xyz = np.asarray([value[0] for value in semantic_values], dtype=np.float32)
-            colors = np.asarray([value[1] for value in semantic_values], dtype=np.uint8)
-            labels = np.asarray([value[2] for value in semantic_values], dtype=np.uint16)
-            confidence = np.asarray([value[3] for value in semantic_values], dtype=np.float32)
+        xyz, colors, labels, confidence = self.semantic_fusion.snapshot()
+        if xyz.shape[0] > 0:
             self.map_pub.publish(cloud_message(header, xyz, colors, labels, confidence))
 
     def publish_markers(

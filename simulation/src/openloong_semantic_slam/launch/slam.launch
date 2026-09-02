@@ -50,6 +50,11 @@
       <param name="voxel_size" value="0.10"/>
       <param name="max_voxels" value="200000"/>
       <param name="map_publish_period" value="2.0"/>
+      <param name="max_image_delta" value="0.12"/>
+      <param name="image_buffer_size" value="10"/>
+      <param name="semantic_min_observations" value="2"/>
+      <param name="semantic_min_consensus" value="0.55"/>
+      <param name="semantic_evidence_decay" value="0.95"/>
     </node>
   </group>
 

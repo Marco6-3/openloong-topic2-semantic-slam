@@ -130,6 +130,11 @@ class RuntimeValidator:
 
         inference = [float(item.get("inference_ms", 0.0)) for item in self.semantic_statuses]
         pipeline = [float(item.get("pipeline_ms", 0.0)) for item in self.semantic_statuses]
+        image_delta = [float(item.get("image_delta_ms", 0.0)) for item in self.semantic_statuses]
+        final_semantic = self.semantic_statuses[-1] if self.semantic_statuses else {}
+        stable_voxels = int(final_semantic.get("semantic_voxels", 0))
+        candidate_voxels = int(final_semantic.get("semantic_candidate_voxels", stable_voxels))
+        transient_voxels = int(final_semantic.get("semantic_transient_voxels", 0))
         detected = sorted({name for item in self.semantic_statuses for name in item.get("detections", [])})
         tf_checks = {
             "map_to_odom": self.frame_exists("map", "odom"),
@@ -153,6 +158,13 @@ class RuntimeValidator:
             "inference_ms_median": round(statistics.median(inference), 2) if inference else None,
             "inference_ms_p95": round(sorted(inference)[int(0.95 * (len(inference) - 1))], 2) if inference else None,
             "pipeline_ms_p95": round(sorted(pipeline)[int(0.95 * (len(pipeline) - 1))], 2) if pipeline else None,
+            "image_delta_ms_p95": round(sorted(image_delta)[int(0.95 * (len(image_delta) - 1))], 2) if image_delta else None,
+            "semantic_voxels_final": {
+                "stable": stable_voxels,
+                "candidate": candidate_voxels,
+                "transient_filtered": transient_voxels,
+                "stable_ratio": round(stable_voxels / candidate_voxels, 4) if candidate_voxels else None,
+            },
             "tf": tf_checks,
         }
 
@@ -185,6 +197,8 @@ class RuntimeValidator:
             failures.append(f"semantic inference p95 {report['inference_ms_p95']:.1f} ms > 160 ms")
         if pipeline and report["pipeline_ms_p95"] > 400.0:
             failures.append(f"semantic pipeline p95 {report['pipeline_ms_p95']:.1f} ms > 400 ms")
+        if image_delta and report["image_delta_ms_p95"] > 120.0:
+            failures.append(f"camera-lidar timestamp delta p95 {report['image_delta_ms_p95']:.1f} ms > 120 ms")
         for name, connected in tf_checks.items():
             if not connected:
                 failures.append(f"TF check failed: {name}")
